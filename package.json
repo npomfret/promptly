@@ -5,8 +5,9 @@
   "main": "dist/server.js",
   "type": "module",
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/server.js",
+    "start": "npm run type-check && tsx src/server.ts",
+    "stop": "./scripts/stop.sh",
+    "projects": "./scripts/projects.sh",
     "dev": "tsx watch src/server.ts",
     "type-check": "tsc --noEmit"
   },

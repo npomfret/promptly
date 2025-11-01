@@ -1,0 +1,8 @@
+{
+  "projects": [
+    {
+      "gitUrl": "git@github.com:user/repo.git",
+      "branch": "main"
+    }
+  ]
+}

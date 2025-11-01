@@ -17,8 +17,19 @@ import type {
   SessionInfoResponse,
   HistoryResponse,
   ClearSessionResponse,
-  CacheRefreshResponse
+  CacheRefreshResponse,
+  ProjectsListResponse,
+  AddProjectRequest,
+  AddProjectResponse,
+  RemoveProjectResponse,
+  Project,
+  ProjectInfo
 } from './types.js';
+import {
+  initializeProjects,
+  addProject as addProjectToConfig,
+  removeProject as removeProjectFromConfig
+} from './projectManager.js';
 
 // Load environment variables
 dotenv.config();
@@ -29,7 +40,7 @@ const __dirname = dirname(__filename);
 
 // Load system prompt from file and inject variables
 function loadSystemPrompt(projectDir: string): string {
-  const systemPromptPath = join(__dirname, '..', 'system-prompt.md');
+  const systemPromptPath = join(__dirname, '..', 'prompts', 'system-prompt.md');
 
   let content = '';
 
@@ -142,8 +153,8 @@ function gatherProjectContext(projectDir: string): string {
 // Configuration
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const API_KEY = process.env.GEMINI_API_KEY;
-const PROJECT_DIR = process.env.PROJECT_DIR!;
-// Resolve HISTORY_DIR to absolute path (before chdir) to handle relative paths
+const CHECKOUT_DIR = process.env.CHECKOUT_DIR!;
+// Resolve HISTORY_DIR to absolute path
 const HISTORY_DIR = process.env.HISTORY_DIR ? resolve(process.env.HISTORY_DIR) : undefined;
 const SESSION_SECRET = process.env.SESSION_SECRET || `gemini-session-secret-${uuidv4()}`;
 const SESSION_MAX_AGE = 24 * 60 * 60 * 1000; // 24 hours
@@ -155,27 +166,9 @@ if (!API_KEY) {
   process.exit(1);
 }
 
-if (!PROJECT_DIR) {
-  console.error('Error: PROJECT_DIR environment variable is required');
-  console.error('Set it in your .env file, e.g., PROJECT_DIR=/Users/yourname/projects/your-project');
-  process.exit(1);
-}
-
-if (!existsSync(PROJECT_DIR)) {
-  console.error(`Error: PROJECT_DIR does not exist: ${PROJECT_DIR}`);
-  console.error('Please check the path in your .env file');
-  process.exit(1);
-}
-
-try {
-  const stats = statSync(PROJECT_DIR);
-  if (!stats.isDirectory()) {
-    console.error(`Error: PROJECT_DIR is not a directory: ${PROJECT_DIR}`);
-    process.exit(1);
-  }
-} catch (error) {
-  console.error(`Error: Cannot access PROJECT_DIR: ${PROJECT_DIR}`);
-  console.error(error instanceof Error ? error.message : 'Unknown error');
+if (!CHECKOUT_DIR) {
+  console.error('Error: CHECKOUT_DIR environment variable is required');
+  console.error('Set it in your .env file, e.g., CHECKOUT_DIR=/Users/yourname/projects/checkouts');
   process.exit(1);
 }
 
@@ -201,18 +194,6 @@ if (HISTORY_DIR) {
   }
 }
 
-// Change working directory to PROJECT_DIR
-try {
-  process.chdir(PROJECT_DIR);
-  console.log(`[✓] Changed working directory to: ${PROJECT_DIR}`);
-} catch (error) {
-  console.error(`Error: Failed to change working directory to ${PROJECT_DIR}`);
-  console.error(error instanceof Error ? error.message : 'Unknown error');
-  process.exit(1);
-}
-
-const SYSTEM_PROMPT = loadSystemPrompt(PROJECT_DIR);
-
 // Initialize Express app
 const app = express();
 
@@ -220,19 +201,20 @@ const app = express();
 const genAI = new GoogleGenerativeAI(API_KEY);
 const cacheManager = new GoogleAICacheManager(API_KEY);
 
-// Store for long-lived chat sessions
+// Store for projects
+const projects = new Map<string, Project>();
+
+// Store for long-lived chat sessions (key: sessionId:projectId)
 const chatSessions = new Map<string, SessionData>();
 
-// Store cached content
-let cachedContent: any = null;
-
 /**
- * Create or refresh cached content with project context
+ * Create or refresh cached content with project context for a specific project
  */
-async function createCachedContent(): Promise<any> {
-  console.log('[...] Creating cached content with project context...');
+async function createCachedContent(project: Project): Promise<any> {
+  console.log(`[...] Creating cached content for project ${project.id}...`);
 
-  const projectContext = gatherProjectContext(PROJECT_DIR);
+  const systemPrompt = loadSystemPrompt(project.path);
+  const projectContext = gatherProjectContext(project.path);
 
   const cacheResult = await cacheManager.create({
     model: 'gemini-2.5-flash',
@@ -243,14 +225,14 @@ async function createCachedContent(): Promise<any> {
       },
       {
         role: 'model',
-        parts: [{ text: 'I have received and processed the project context. I can now see all 692 git-tracked files, the directory structure, and configuration files. I will use this information when analyzing and enhancing prompts. What prompt would you like me to help with?' }],
+        parts: [{ text: 'I have received and processed the project context. I can now see all git-tracked files, the directory structure, and configuration files. I will use this information when analyzing and enhancing prompts. What prompt would you like me to help with?' }],
       },
     ],
-    systemInstruction: SYSTEM_PROMPT,
+    systemInstruction: systemPrompt,
     ttlSeconds: 3600, // Cache for 1 hour
   });
 
-  console.log(`[✓] Created cached content: ${cacheResult.name}`);
+  console.log(`[✓] Created cached content for project ${project.id}: ${cacheResult.name}`);
   console.log(`[✓] Cache expires at: ${cacheResult.expireTime}`);
 
   return cacheResult;
@@ -282,36 +264,43 @@ declare module 'express-session' {
 }
 
 /**
- * Get or create a chat session for the given session ID
+ * Get or create a chat session for the given session ID and project ID
  */
-function getChatSession(sessionId: string): SessionData {
-  if (!chatSessions.has(sessionId)) {
-    let model;
+function getChatSession(sessionId: string, projectId: string): SessionData {
+  const compositeKey = `${sessionId}:${projectId}`;
 
-    // Use cached model (should always be available after startup)
-    if (!cachedContent) {
-      throw new Error('No cached content available - server should not have started');
+  if (!chatSessions.has(compositeKey)) {
+    // Get project
+    const project = projects.get(projectId);
+    if (!project) {
+      throw new Error(`Project not found: ${projectId}`);
     }
 
-    console.log(`[${new Date().toISOString()}] Using cached model for session: ${sessionId}`);
-    model = genAI.getGenerativeModelFromCachedContent(cachedContent);
+    // Use cached model for this project
+    if (!project.cachedContent) {
+      throw new Error(`No cached content available for project: ${projectId}`);
+    }
+
+    console.log(`[${new Date().toISOString()}] Using cached model for session: ${compositeKey}`);
+    const model = genAI.getGenerativeModelFromCachedContent(project.cachedContent);
 
     const chat = model.startChat({
       history: []
     });
 
     const sessionData: SessionData = {
+      projectId,
       chat,
       history: [],
       createdAt: new Date(),
       lastUsed: new Date()
     };
 
-    chatSessions.set(sessionId, sessionData);
-    console.log(`[${new Date().toISOString()}] Created new chat session: ${sessionId}`);
+    chatSessions.set(compositeKey, sessionData);
+    console.log(`[${new Date().toISOString()}] Created new chat session: ${compositeKey}`);
   }
 
-  const sessionData = chatSessions.get(sessionId)!;
+  const sessionData = chatSessions.get(compositeKey)!;
   sessionData.lastUsed = new Date();
   return sessionData;
 }
@@ -335,6 +324,7 @@ function cleanupOldSessions(): void {
  */
 function writeHistoryEntry(data: {
   sessionId: string;
+  projectId: string;
   timestamp: Date;
   request: string;
   response: string;
@@ -346,29 +336,40 @@ function writeHistoryEntry(data: {
   }
 
   try {
+    // Create project-specific history directory
+    const projectHistoryDir = join(HISTORY_DIR, data.projectId);
+    if (!existsSync(projectHistoryDir)) {
+      mkdirSync(projectHistoryDir, { recursive: true });
+    }
+
     // Create filename with ISO timestamp for easy sorting
     const isoTimestamp = data.timestamp.toISOString().replace(/[:.]/g, '-');
     const filename = `${isoTimestamp}_${data.sessionId.substring(0, 8)}.json`;
-    const filepath = join(HISTORY_DIR, filename);
+    const filepath = join(projectHistoryDir, filename);
+
+    // Get project for metadata
+    const project = projects.get(data.projectId);
 
     // Prepare history entry with all metadata
     const historyEntry = {
       sessionId: data.sessionId,
+      projectId: data.projectId,
       timestamp: data.timestamp.toISOString(),
       messageCount: data.messageCount,
-      cachedContentName: data.cachedContentName || cachedContent?.name,
+      cachedContentName: data.cachedContentName,
       request: data.request,
       response: data.response,
       metadata: {
         serverVersion: '1.0.0',
         model: 'gemini-2.5-flash',
-        projectDir: PROJECT_DIR
+        projectPath: project?.path,
+        gitUrl: project?.gitUrl
       }
     };
 
     // Write to file
     writeFileSync(filepath, JSON.stringify(historyEntry, null, 2), 'utf-8');
-    console.log(`[✓] Wrote history entry: ${filename}`);
+    console.log(`[✓] Wrote history entry: ${data.projectId}/${filename}`);
   } catch (error) {
     console.error(`[ERROR] Failed to write history entry:`, error instanceof Error ? error.message : 'Unknown error');
     // Don't throw - history logging shouldn't break the main functionality
@@ -384,19 +385,29 @@ app.get('/health', (_req: Request, res: Response<HealthResponse>) => {
   res.json({
     status: 'ok',
     sessions: chatSessions.size,
-    systemPrompt: SYSTEM_PROMPT
+    systemPrompt: 'Multi-project server'
   });
 });
 
 /**
  * Get current session information
  */
-app.get('/session', (req: Request, res: Response<SessionInfoResponse>) => {
+app.get('/session', (req: Request, res: Response<SessionInfoResponse | ErrorResponse>) => {
   const sessionId = req.session.id;
-  const sessionData = chatSessions.get(sessionId);
+  const projectId = req.query.projectId as string;
+
+  if (!projectId) {
+    return res.status(400).json({
+      error: 'projectId query parameter is required'
+    });
+  }
+
+  const compositeKey = `${sessionId}:${projectId}`;
+  const sessionData = chatSessions.get(compositeKey);
 
   res.json({
     sessionId,
+    projectId,
     hasActiveSession: !!sessionData,
     messageCount: sessionData ? sessionData.history.length : 0,
     createdAt: sessionData?.createdAt || null,
@@ -407,12 +418,21 @@ app.get('/session', (req: Request, res: Response<SessionInfoResponse>) => {
 /**
  * Clear the current session
  */
-app.post('/session/clear', (req: Request, res: Response<ClearSessionResponse>) => {
+app.post('/session/clear', (req: Request, res: Response<ClearSessionResponse | ErrorResponse>) => {
   const sessionId = req.session.id;
+  const projectId = req.query.projectId as string;
 
-  if (chatSessions.has(sessionId)) {
-    chatSessions.delete(sessionId);
-    console.log(`[${new Date().toISOString()}] Cleared chat session: ${sessionId}`);
+  if (!projectId) {
+    return res.status(400).json({
+      error: 'projectId query parameter is required'
+    });
+  }
+
+  const compositeKey = `${sessionId}:${projectId}`;
+
+  if (chatSessions.has(compositeKey)) {
+    chatSessions.delete(compositeKey);
+    console.log(`[${new Date().toISOString()}] Cleared chat session: ${compositeKey}`);
   }
 
   res.json({
@@ -423,24 +443,45 @@ app.post('/session/clear', (req: Request, res: Response<ClearSessionResponse>) =
 });
 
 /**
- * Refresh cached content with updated project context
+ * Refresh cached content for a specific project
  */
-app.post('/cache/refresh', async (_req: Request, res: Response<CacheRefreshResponse | ErrorResponse>) => {
+app.post('/cache/refresh', async (req: Request, res: Response<CacheRefreshResponse | ErrorResponse>) => {
   try {
-    console.log('[...] Refreshing cached content...');
+    const projectId = req.query.projectId as string;
 
-    // Clear all existing sessions (they're using old cache)
-    const sessionCount = chatSessions.size;
-    chatSessions.clear();
+    if (!projectId) {
+      return res.status(400).json({
+        error: 'projectId query parameter is required'
+      });
+    }
 
-    // Create new cached content
-    cachedContent = await createCachedContent();
+    const project = projects.get(projectId);
+    if (!project) {
+      return res.status(404).json({
+        error: `Project not found: ${projectId}`
+      });
+    }
+
+    console.log(`[...] Refreshing cached content for project ${projectId}...`);
+
+    // Clear sessions for this project
+    let clearedCount = 0;
+    for (const [key] of chatSessions.entries()) {
+      if (key.endsWith(`:${projectId}`)) {
+        chatSessions.delete(key);
+        clearedCount++;
+      }
+    }
+
+    // Create new cached content for this project
+    const newCache = await createCachedContent(project);
+    project.cachedContent = newCache;
 
     res.json({
       success: true,
-      message: 'Cache refreshed successfully',
-      cachedContentName: cachedContent.name,
-      clearedSessions: sessionCount
+      message: `Cache refreshed successfully for project ${projectId}`,
+      cachedContentName: newCache.name,
+      clearedSessions: clearedCount
     });
   } catch (error) {
     console.error('[ERROR] Failed to refresh cache:', error);
@@ -457,6 +498,13 @@ app.post('/cache/refresh', async (_req: Request, res: Response<CacheRefreshRespo
 app.post('/chat', async (req: Request<{}, ChatResponse | ErrorResponse, ChatRequest>, res: Response<ChatResponse | ErrorResponse>) => {
   try {
     const { message } = req.body;
+    const projectId = req.query.projectId as string;
+
+    if (!projectId) {
+      return res.status(400).json({
+        error: 'projectId query parameter is required'
+      });
+    }
 
     if (!message || typeof message !== 'string') {
       return res.status(400).json({
@@ -465,10 +513,10 @@ app.post('/chat', async (req: Request<{}, ChatResponse | ErrorResponse, ChatRequ
     }
 
     const sessionId = req.session.id;
-    const sessionData = getChatSession(sessionId);
+    const sessionData = getChatSession(sessionId, projectId);
 
     console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
-    console.log(`[${new Date().toISOString()}] Session: ${sessionId}`);
+    console.log(`[${new Date().toISOString()}] Session: ${sessionId}:${projectId}`);
     console.log(`[${new Date().toISOString()}] Input Prompt:`);
     console.log(message);
     console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
@@ -497,17 +545,21 @@ app.post('/chat', async (req: Request<{}, ChatResponse | ErrorResponse, ChatRequ
     );
 
     // Write to history file if configured
+    const project = projects.get(projectId);
     writeHistoryEntry({
       sessionId,
+      projectId,
       timestamp,
       request: message,
       response,
-      messageCount: sessionData.history.length
+      messageCount: sessionData.history.length,
+      cachedContentName: project?.cachedContent?.name
     });
 
     res.json({
       success: true,
       sessionId,
+      projectId,
       response,
       messageCount: sessionData.history.length
     });
@@ -523,13 +575,23 @@ app.post('/chat', async (req: Request<{}, ChatResponse | ErrorResponse, ChatRequ
 /**
  * Get chat history for current session
  */
-app.get('/history', (req: Request, res: Response<HistoryResponse>) => {
+app.get('/history', (req: Request, res: Response<HistoryResponse | ErrorResponse>) => {
   const sessionId = req.session.id;
-  const sessionData = chatSessions.get(sessionId);
+  const projectId = req.query.projectId as string;
+
+  if (!projectId) {
+    return res.status(400).json({
+      error: 'projectId query parameter is required'
+    });
+  }
+
+  const compositeKey = `${sessionId}:${projectId}`;
+  const sessionData = chatSessions.get(compositeKey);
 
   if (!sessionData) {
     return res.json({
       sessionId,
+      projectId,
       history: [],
       messageCount: 0
     });
@@ -537,9 +599,128 @@ app.get('/history', (req: Request, res: Response<HistoryResponse>) => {
 
   res.json({
     sessionId,
+    projectId,
     history: sessionData.history,
     messageCount: sessionData.history.length
   });
+});
+
+/**
+ * List all configured projects
+ */
+app.get('/projects', (_req: Request, res: Response<ProjectsListResponse>) => {
+  const projectList: ProjectInfo[] = Array.from(projects.values()).map(p => ({
+    id: p.id,
+    gitUrl: p.gitUrl,
+    branch: p.branch,
+    path: p.path,
+    lastUpdated: p.lastUpdated
+  }));
+
+  res.json({
+    projects: projectList
+  });
+});
+
+/**
+ * Add a new project
+ */
+app.post('/projects', async (req: Request<{}, AddProjectResponse | ErrorResponse, AddProjectRequest>, res: Response<AddProjectResponse | ErrorResponse>) => {
+  try {
+    const { gitUrl, branch } = req.body;
+
+    if (!gitUrl) {
+      return res.status(400).json({
+        error: 'gitUrl is required'
+      });
+    }
+
+    // Add project (will clone repository and update config)
+    const project = await addProjectToConfig(gitUrl, CHECKOUT_DIR, branch);
+
+    // Create cached content for the new project
+    project.cachedContent = await createCachedContent(project);
+
+    // Store in projects map
+    projects.set(project.id, project);
+
+    res.json({
+      success: true,
+      message: `Project added successfully: ${project.id}`,
+      project: {
+        id: project.id,
+        gitUrl: project.gitUrl,
+        branch: project.branch,
+        path: project.path,
+        lastUpdated: project.lastUpdated
+      }
+    });
+  } catch (error) {
+    console.error('[ERROR] Failed to add project:', error);
+    res.status(500).json({
+      error: 'Failed to add project',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * Remove a project
+ */
+app.delete('/projects/:projectId', async (req: Request, res: Response<RemoveProjectResponse | ErrorResponse>) => {
+  try {
+    const { projectId } = req.params;
+
+    const project = projects.get(projectId);
+    if (!project) {
+      return res.status(404).json({
+        error: `Project not found: ${projectId}`
+      });
+    }
+
+    // Remove from configuration
+    await removeProjectFromConfig(projectId, project);
+
+    // Clear all sessions for this project
+    for (const [key] of chatSessions.entries()) {
+      if (key.endsWith(`:${projectId}`)) {
+        chatSessions.delete(key);
+      }
+    }
+
+    // Remove from projects map
+    projects.delete(projectId);
+
+    res.json({
+      success: true,
+      message: `Project removed successfully: ${projectId}`,
+      projectId
+    });
+  } catch (error) {
+    console.error('[ERROR] Failed to remove project:', error);
+    res.status(500).json({
+      error: 'Failed to remove project',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * Shutdown endpoint - gracefully stop the server
+ */
+app.post('/shutdown', (_req: Request, res: Response) => {
+  console.log('[...] Shutdown requested');
+
+  res.json({
+    success: true,
+    message: 'Server shutting down...'
+  });
+
+  // Give response time to send before shutting down
+  setTimeout(() => {
+    console.log('[✓] Server shutting down gracefully');
+    process.exit(0);
+  }, 100);
 });
 
 // Error handling middleware
@@ -558,27 +739,40 @@ setInterval(cleanupOldSessions, CLEANUP_INTERVAL);
  * Initialize and start the server
  */
 async function startServer() {
-  // Create cached content with project context - MUST succeed or die
-  cachedContent = await createCachedContent();
+  // Initialize projects from configuration
+  console.log('[...] Initializing projects...');
+  const initializedProjects = await initializeProjects(CHECKOUT_DIR);
+
+  // Create cached content for each project
+  for (const [projectId, project] of initializedProjects.entries()) {
+    project.cachedContent = await createCachedContent(project);
+    projects.set(projectId, project);
+  }
+
+  console.log(`[✓] Initialized ${projects.size} project(s)`);
 
   // Start server
   app.listen(PORT, () => {
     console.log(`
 ╔════════════════════════════════════════════════════════════════╗
-║  Gemini Session Server                                         ║
+║  Gemini Multi-Project Session Server                          ║
 ╚════════════════════════════════════════════════════════════════╝
 
 Server running on: http://localhost:${PORT}
-System prompt: "${SYSTEM_PROMPT.substring(0, 100)}..."
-Cached content: ${cachedContent.name}
+Checkout directory: ${CHECKOUT_DIR}
+Projects loaded: ${projects.size}
 
 Endpoints:
-  GET  /health        - Health check and server status
-  GET  /session       - Get current session info
-  POST /chat          - Send message { "message": "your text" }
-  GET  /history       - Get chat history for current session
-  POST /session/clear - Clear current session
-  POST /cache/refresh - Refresh project context cache
+  GET    /health                - Health check and server status
+  GET    /projects              - List all projects
+  POST   /projects              - Add new project
+  DELETE /projects/:projectId   - Remove project
+  GET    /session?projectId=ID  - Get current session info
+  POST   /chat?projectId=ID     - Send message { "message": "your text" }
+  GET    /history?projectId=ID  - Get chat history for current session
+  POST   /session/clear?projectId=ID - Clear current session
+  POST   /cache/refresh?projectId=ID - Refresh project context cache
+  POST   /shutdown              - Gracefully shutdown the server
 
 Session configuration:
   - Max age: ${SESSION_MAX_AGE / (60 * 60 * 1000)} hours
@@ -587,18 +781,21 @@ Session configuration:
   - Model: gemini-2.5-flash
   - History logging: ${HISTORY_DIR ? `ENABLED (${HISTORY_DIR})` : 'DISABLED'}
 
+Projects:
+${Array.from(projects.values()).map(p => `  - ${p.id}: ${p.gitUrl}`).join('\n') || '  (none configured - use POST /projects to add)'}
+
 Ready to accept requests!
     `);
   });
 }
 
-// Start the server - will die if cache creation fails
+// Start the server - will die if initialization fails
 startServer().catch((error) => {
   console.error('\n╔════════════════════════════════════════════════════════════════╗');
   console.error('║  FATAL: Server startup failed                                 ║');
   console.error('╚════════════════════════════════════════════════════════════════╝\n');
   console.error(error);
-  console.error('\nServer cannot start without context caching.');
-  console.error('Check your GEMINI_API_KEY and PROJECT_DIR configuration.\n');
+  console.error('\nServer cannot start without project initialization.');
+  console.error('Check your GEMINI_API_KEY and CHECKOUT_DIR configuration.\n');
   process.exit(1);
 });

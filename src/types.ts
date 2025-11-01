@@ -1,4 +1,4 @@
-import { ChatSession } from '@google/generative-ai';
+import { ChatSession, CachedContent } from '@google/generative-ai';
 
 export interface ChatMessage {
   role: 'user' | 'model';
@@ -6,7 +6,26 @@ export interface ChatMessage {
   timestamp: Date;
 }
 
+export interface Project {
+  id: string;
+  gitUrl: string;
+  branch: string;
+  path: string;
+  cachedContent?: CachedContent;
+  lastUpdated: Date;
+}
+
+export interface ProjectConfig {
+  gitUrl: string;
+  branch?: string;
+}
+
+export interface ProjectsConfigFile {
+  projects: ProjectConfig[];
+}
+
 export interface SessionData {
+  projectId: string;
   chat: ChatSession;
   history: ChatMessage[];
   createdAt: Date;
@@ -20,6 +39,7 @@ export interface ChatRequest {
 export interface ChatResponse {
   success: boolean;
   sessionId: string;
+  projectId: string;
   response: string;
   messageCount: number;
 }
@@ -37,6 +57,7 @@ export interface HealthResponse {
 
 export interface SessionInfoResponse {
   sessionId: string;
+  projectId: string | null;
   hasActiveSession: boolean;
   messageCount: number;
   createdAt: Date | null;
@@ -45,6 +66,7 @@ export interface SessionInfoResponse {
 
 export interface HistoryResponse {
   sessionId: string;
+  projectId: string;
   history: ChatMessage[];
   messageCount: number;
 }
@@ -60,4 +82,33 @@ export interface CacheRefreshResponse {
   message: string;
   cachedContentName: string;
   clearedSessions: number;
+}
+
+export interface ProjectInfo {
+  id: string;
+  gitUrl: string;
+  branch: string;
+  path: string;
+  lastUpdated: Date;
+}
+
+export interface ProjectsListResponse {
+  projects: ProjectInfo[];
+}
+
+export interface AddProjectRequest {
+  gitUrl: string;
+  branch?: string;
+}
+
+export interface AddProjectResponse {
+  success: boolean;
+  message: string;
+  project: ProjectInfo;
+}
+
+export interface RemoveProjectResponse {
+  success: boolean;
+  message: string;
+  projectId: string;
 }

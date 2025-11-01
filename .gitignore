@@ -1,7 +1,7 @@
 # Dependencies
 node_modules/
 
-# Build output
+# Build output (not needed with tsx)
 dist/
 
 # Environment variables
@@ -40,4 +40,5 @@ Thumbs.db
 .idea/**/contentModel.xml
 
 cookies.txt
-history
+projects.json
+data/
