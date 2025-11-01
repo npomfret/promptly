@@ -620,6 +620,7 @@ app.get('/project/:projectId', (req: Request, res: Response) => {
 
   chatHTML = chatHTML
     .replace(/\{\{PROJECT_NAME\}\}/g, project.gitUrl.split('/').pop()?.replace('.git', '') || project.id)
+    .replace(/\{\{GIT_URL\}\}/g, project.gitUrl)
     .replace(/\{\{PROJECT_ID\}\}/g, project.id)
     .replace(/\{\{PROJECT_BRANCH\}\}/g, project.branch)
     .replace(/\{\{MESSAGES\}\}/g, messagesHTML)
