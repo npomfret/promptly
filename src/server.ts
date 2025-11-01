@@ -67,10 +67,29 @@ function loadSystemPrompt(projectDir: string): string {
   }
 
   // Inject PROJECT_DIR into the prompt
-  const injectedPrompt = content.replace(/\{\{PROJECT_DIR\}\}/g, projectDir);
+  let injectedPrompt = content.replace(/\{\{PROJECT_DIR\}\}/g, projectDir);
 
   if (injectedPrompt.includes(projectDir)) {
     console.log(`[✓] Injected PROJECT_DIR: ${projectDir}`);
+  }
+
+  // Inject CLAUDE_SPECIFIC_CONTENT if .claude directory exists in project
+  const claudeDir = join(projectDir, '.claude');
+  const claudePromptFile = join(__dirname, '..', 'prompts', 'claude-specific-prompt.md');
+
+  if (existsSync(claudeDir) && existsSync(claudePromptFile)) {
+    try {
+      const claudeContent = readFileSync(claudePromptFile, 'utf-8').trim();
+      console.log(`[✓] Loaded Claude-specific content from: ${claudePromptFile}`);
+      injectedPrompt = injectedPrompt.replace(/\{\{CLAUDE_SPECIFIC_CONTENT\}\}/g, claudeContent);
+    } catch (error) {
+      console.warn(`[!] Failed to read ${claudePromptFile}:`, error);
+      // Remove the placeholder if file can't be read
+      injectedPrompt = injectedPrompt.replace(/\{\{CLAUDE_SPECIFIC_CONTENT\}\}\n?/g, '');
+    }
+  } else {
+    // No .claude directory in project or claude-specific-prompt.md file doesn't exist, remove the placeholder
+    injectedPrompt = injectedPrompt.replace(/\{\{CLAUDE_SPECIFIC_CONTENT\}\}\n?/g, '');
   }
 
   return injectedPrompt;
@@ -412,13 +431,24 @@ function generateProjectsTable(): string {
     return '<p class="text-muted">No projects configured. Add one above to get started.</p>';
   }
 
-  const rows = Array.from(projects.values()).map(p => `
+  const rows = Array.from(projects.values()).map(p => {
+    // Load system prompt for this project
+    const systemPrompt = loadSystemPrompt(p.path);
+    const promptPreview = systemPrompt.substring(0, 100) + (systemPrompt.length > 100 ? '...' : '');
+    const promptId = `prompt-${p.id}`;
+
+    return `
     <tr class="project-item">
       <td><a href="/project/${p.id}">${p.id}</a></td>
       <td>${p.gitUrl}</td>
       <td>${p.branch}</td>
       <td class="text-muted">${new Date(p.lastUpdated).toLocaleString()}</td>
       <td class="actions">
+        <button class="btn btn-secondary btn-small"
+                onclick="togglePrompt('${promptId}')">
+          <i data-lucide="file-text" class="icon"></i>
+          Prompt
+        </button>
         <button class="btn btn-danger btn-small"
                 hx-delete="/api/projects/${p.id}"
                 hx-target="#project-list"
@@ -429,7 +459,16 @@ function generateProjectsTable(): string {
         </button>
       </td>
     </tr>
-  `).join('');
+    <tr id="${promptId}" class="prompt-row" style="display: none;">
+      <td colspan="5">
+        <div class="prompt-container">
+          <h3>System Prompt</h3>
+          <pre class="prompt-content">${escapeHtml(systemPrompt)}</pre>
+        </div>
+      </td>
+    </tr>
+  `;
+  }).join('');
 
   return `
     <table>
@@ -508,17 +547,72 @@ app.get('/project/:projectId', (req: Request, res: Response) => {
     `);
   }
 
-  // Get chat history if exists
-  const sessionId = req.session.id;
-  const compositeKey = `${sessionId}:${projectId}`;
-  const sessionData = chatSessions.get(compositeKey);
-
+  // Get chat history from HISTORY_DIR if available
   let messagesHTML = '<p class="text-muted">No messages yet. Start the conversation below.</p>';
-  if (sessionData && sessionData.history.length > 0) {
-    messagesHTML = sessionData.history.map(msg =>
-      generateMessageHTML(msg.role, msg.message, msg.timestamp)
-    ).join('');
+
+  if (HISTORY_DIR) {
+    try {
+      const projectHistoryDir = join(HISTORY_DIR, projectId);
+
+      if (existsSync(projectHistoryDir)) {
+        // Read all history files, sorted by timestamp (oldest first)
+        const files = execSync(`ls "${projectHistoryDir}"/*.json 2>/dev/null | sort || true`, {
+          encoding: 'utf-8',
+          maxBuffer: 10 * 1024 * 1024
+        }).trim().split('\n').filter(f => f);
+
+        if (files.length > 0) {
+          const historyEntries: Array<{
+            timestamp: Date;
+            request: string;
+            response: string;
+          }> = [];
+
+          for (const file of files) {
+            try {
+              const content = readFileSync(file, 'utf-8');
+              const entry = JSON.parse(content);
+              historyEntries.push({
+                timestamp: new Date(entry.timestamp),
+                request: entry.request,
+                response: entry.response
+              });
+            } catch (error) {
+              console.error(`[ERROR] Failed to read history file ${file}:`, error);
+            }
+          }
+
+          // Sort by timestamp (oldest first)
+          historyEntries.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+          // Generate HTML
+          messagesHTML = historyEntries.map(entry => {
+            const userHTML = generateMessageHTML('user', entry.request, entry.timestamp);
+            const modelHTML = generateMessageHTML('model', entry.response, entry.timestamp);
+            return userHTML + modelHTML;
+          }).join('');
+        }
+      }
+    } catch (error) {
+      console.error('[ERROR] Failed to load project history:', error);
+    }
   }
+
+  // If no saved history, check current session
+  if (messagesHTML === '<p class="text-muted">No messages yet. Start the conversation below.</p>') {
+    const sessionId = req.session.id;
+    const compositeKey = `${sessionId}:${projectId}`;
+    const sessionData = chatSessions.get(compositeKey);
+
+    if (sessionData && sessionData.history.length > 0) {
+      messagesHTML = sessionData.history.map(msg =>
+        generateMessageHTML(msg.role, msg.message, msg.timestamp)
+      ).join('');
+    }
+  }
+
+  // Load system prompt for this project (with PROJECT_DIR substituted - this is what Gemini sees)
+  const systemPrompt = loadSystemPrompt(project.path);
 
   // Load and populate chat template
   const chatPath = join(__dirname, '..', 'views', 'chat.html');
@@ -528,7 +622,8 @@ app.get('/project/:projectId', (req: Request, res: Response) => {
     .replace(/\{\{PROJECT_NAME\}\}/g, project.gitUrl.split('/').pop()?.replace('.git', '') || project.id)
     .replace(/\{\{PROJECT_ID\}\}/g, project.id)
     .replace(/\{\{PROJECT_BRANCH\}\}/g, project.branch)
-    .replace(/\{\{MESSAGES\}\}/g, messagesHTML);
+    .replace(/\{\{MESSAGES\}\}/g, messagesHTML)
+    .replace(/\{\{SYSTEM_PROMPT\}\}/g, escapeHtml(systemPrompt)); // This is already templated by loadSystemPrompt
 
   res.send(chatHTML);
 });
@@ -660,6 +755,78 @@ app.post('/api/chat-message', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('[ERROR] Failed to process chat:', error);
     res.status(500).send(`<p class="error">Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}</p>`);
+  }
+});
+
+/**
+ * HTMX: Load project history from disk
+ */
+app.get('/api/project-history', (req: Request, res: Response) => {
+  const projectId = req.query.projectId as string;
+
+  if (!projectId) {
+    return res.status(400).send('<p class="error">Project ID is required</p>');
+  }
+
+  if (!HISTORY_DIR) {
+    return res.send('<p class="text-muted">History logging is disabled. Enable by setting HISTORY_DIR in .env</p>');
+  }
+
+  try {
+    const projectHistoryDir = join(HISTORY_DIR, projectId);
+
+    // Check if history directory exists
+    if (!existsSync(projectHistoryDir)) {
+      return res.send('<p class="text-muted">No history found for this project yet.</p>');
+    }
+
+    // Read all history files
+    const files = execSync(`ls -t "${projectHistoryDir}"/*.json 2>/dev/null || true`, {
+      encoding: 'utf-8',
+      maxBuffer: 10 * 1024 * 1024
+    }).trim().split('\n').filter(f => f);
+
+    if (files.length === 0) {
+      return res.send('<p class="text-muted">No history found for this project yet.</p>');
+    }
+
+    // Read and parse history files
+    const historyEntries: Array<{
+      timestamp: Date;
+      request: string;
+      response: string;
+      sessionId: string;
+    }> = [];
+
+    for (const file of files) {
+      try {
+        const content = readFileSync(file, 'utf-8');
+        const entry = JSON.parse(content);
+        historyEntries.push({
+          timestamp: new Date(entry.timestamp),
+          request: entry.request,
+          response: entry.response,
+          sessionId: entry.sessionId
+        });
+      } catch (error) {
+        console.error(`[ERROR] Failed to read history file ${file}:`, error);
+      }
+    }
+
+    // Sort by timestamp (oldest first)
+    historyEntries.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+    // Generate HTML
+    const messagesHTML = historyEntries.map(entry => {
+      const userHTML = generateMessageHTML('user', entry.request, entry.timestamp);
+      const modelHTML = generateMessageHTML('model', entry.response, entry.timestamp);
+      return userHTML + modelHTML;
+    }).join('');
+
+    res.send(messagesHTML || '<p class="text-muted">No history found for this project yet.</p>');
+  } catch (error) {
+    console.error('[ERROR] Failed to load project history:', error);
+    res.status(500).send('<p class="error">Failed to load project history</p>');
   }
 });
 

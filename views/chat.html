@@ -21,52 +21,83 @@
             <p class="text-muted">{{PROJECT_BRANCH}} • {{PROJECT_ID}}</p>
           </div>
         </div>
-        <div class="actions">
-          <button class="btn btn-secondary btn-small"
-                  hx-post="/api/session/clear?projectId={{PROJECT_ID}}"
-                  hx-target="#messages"
-                  hx-swap="innerHTML"
-                  hx-confirm="Are you sure you want to clear the session history?">
-            <i data-lucide="trash-2" class="icon"></i>
-            Clear Session
-          </button>
+      </div>
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('test')">
+          <i data-lucide="message-circle" class="icon"></i>
+          Test
+        </button>
+        <button class="tab-btn" onclick="switchTab('conversation')">
+          <i data-lucide="messages-square" class="icon"></i>
+          Conversation
+        </button>
+        <button class="tab-btn" onclick="switchTab('prompt')">
+          <i data-lucide="file-text" class="icon"></i>
+          System Prompt
+        </button>
+        <button class="tab-btn" onclick="switchTab('api')">
+          <i data-lucide="terminal" class="icon"></i>
+          API
+        </button>
+      </div>
+
+      <!-- Test Tab (Single Request/Response) -->
+      <div id="tab-test" class="tab-content active">
+        <div class="chat-input-container">
+          <form class="chat-input-form"
+                hx-post="/api/chat-message"
+                hx-target="#messages"
+                hx-swap="innerHTML"
+                hx-on::after-request="if(event.detail.successful) { this.reset(); }">
+            <input type="hidden" name="projectId" value="{{PROJECT_ID}}">
+            <textarea name="message"
+                      placeholder="Test your prompt with a question..."
+                      required
+                      autofocus></textarea>
+            <button type="submit" class="btn btn-primary">
+              <i data-lucide="send" class="icon"></i>
+              <span class="htmx-indicator">Sending...</span>
+              <span class="htmx-not-indicator">Send</span>
+            </button>
+          </form>
+        </div>
+        <div class="chat-messages" id="messages">
+          <p class="text-muted">Test the prompt with a single request.</p>
         </div>
       </div>
 
-      <div class="chat-messages" id="messages">
-        {{MESSAGES}}
+      <!-- Conversation Tab (Full History) -->
+      <div id="tab-conversation" class="tab-content">
+        <div class="chat-messages" id="conversation-messages"
+             hx-get="/api/project-history?projectId={{PROJECT_ID}}"
+             hx-trigger="load">
+          <p class="text-muted">Loading conversation history...</p>
+        </div>
       </div>
 
-      <div class="chat-input-container">
-        <form class="chat-input-form"
-              hx-post="/api/chat-message"
-              hx-target="#messages"
-              hx-swap="beforeend"
-              hx-on::after-request="if(event.detail.successful) { this.reset(); document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight; }">
-          <input type="hidden" name="projectId" value="{{PROJECT_ID}}">
-          <textarea name="message"
-                    placeholder="Type your message here..."
-                    required
-                    autofocus></textarea>
-          <button type="submit" class="btn btn-primary">
-            <i data-lucide="send" class="icon"></i>
-            <span class="htmx-indicator">Sending...</span>
-            <span class="htmx-not-indicator">Send</span>
-          </button>
-        </form>
+      <!-- System Prompt Tab -->
+      <div id="tab-prompt" class="tab-content">
+        <div class="prompt-viewer">
+          <pre class="prompt-content">{{SYSTEM_PROMPT}}</pre>
+        </div>
       </div>
 
-      <div class="curl-example">
-        <h3><i data-lucide="terminal" class="icon"></i> API Example (curl)</h3>
-        <div class="curl-code-container">
-          <pre id="curl-code">curl -X POST "http://localhost:3000/chat?projectId={{PROJECT_ID}}" \
+      <!-- API Tab -->
+      <div id="tab-api" class="tab-content">
+        <div class="curl-example">
+          <h3><i data-lucide="terminal" class="icon"></i> API Example (curl)</h3>
+          <div class="curl-code-container">
+            <pre id="curl-code">curl -X POST "http://localhost:3000/chat?projectId={{PROJECT_ID}}" \
   -H "Content-Type: application/json" \
   -d '{"message": "What is the project about?"}' \
   -c cookies.txt -b cookies.txt</pre>
-          <button class="btn btn-secondary btn-small copy-btn" onclick="copyCurl()">
-            <i data-lucide="copy" class="icon"></i>
-            Copy
-          </button>
+            <button class="btn btn-secondary btn-small copy-btn" onclick="copyCurl()">
+              <i data-lucide="copy" class="icon"></i>
+              Copy
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -86,6 +117,28 @@
       const messages = document.getElementById('messages');
       messages.scrollTop = messages.scrollHeight;
     });
+
+    // Switch tabs
+    function switchTab(tabName) {
+      // Hide all tab contents
+      document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.classList.remove('active');
+      });
+
+      // Remove active from all tab buttons
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+      });
+
+      // Show selected tab
+      document.getElementById(`tab-${tabName}`).classList.add('active');
+
+      // Add active to clicked button
+      event.target.closest('.tab-btn').classList.add('active');
+
+      // Re-initialize icons
+      lucide.createIcons();
+    }
 
     // Copy curl command to clipboard
     function copyCurl() {

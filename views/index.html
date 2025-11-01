@@ -49,6 +49,16 @@
     document.body.addEventListener('htmx:afterSwap', () => {
       lucide.createIcons();
     });
+
+    // Toggle system prompt display
+    function togglePrompt(promptId) {
+      const row = document.getElementById(promptId);
+      if (row.style.display === 'none') {
+        row.style.display = 'table-row';
+      } else {
+        row.style.display = 'none';
+      }
+    }
   </script>
 </body>
 </html>
