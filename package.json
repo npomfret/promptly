@@ -1,0 +1,31 @@
+{
+  "name": "promptly",
+  "version": "1.0.0",
+  "description": "An http bases prompt enhancer",
+  "main": "dist/server.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": ["gemini", "ai", "express", "session", "typescript"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "express": "^4.21.1",
+    "dotenv": "^16.4.5",
+    "express-session": "^1.18.1",
+    "uuid": "^11.0.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/express-session": "^1.18.0",
+    "@types/node": "^22.8.7",
+    "@types/uuid": "^10.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}
