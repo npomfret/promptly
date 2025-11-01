@@ -30,6 +30,7 @@ import {
   addProject as addProjectToConfig,
   removeProject as removeProjectFromConfig
 } from './projectManager.js';
+import { startWatching } from './repoWatcher.js';
 
 // Load environment variables
 dotenv.config();
@@ -159,6 +160,7 @@ const HISTORY_DIR = process.env.HISTORY_DIR ? resolve(process.env.HISTORY_DIR) :
 const SESSION_SECRET = process.env.SESSION_SECRET || `gemini-session-secret-${uuidv4()}`;
 const SESSION_MAX_AGE = 24 * 60 * 60 * 1000; // 24 hours
 const CLEANUP_INTERVAL = 60 * 60 * 1000; // 1 hour
+const REPO_CHECK_INTERVAL = 1; // Check for repo updates every 1 minute
 
 // Validation
 if (!API_KEY) {
@@ -268,18 +270,40 @@ declare module 'express-session' {
 }
 
 /**
+ * Refresh cache if it's stale
+ * Returns true if cache was refreshed
+ */
+async function refreshCacheIfStale(project: Project): Promise<boolean> {
+  if (project.cacheStale) {
+    console.log(`[...] Cache is stale for project ${project.id}, refreshing...`);
+
+    // Create new cached content
+    const newCache = await createCachedContent(project);
+    project.cachedContent = newCache;
+    project.cacheStale = false;
+
+    console.log(`[✓] Cache refreshed for project ${project.id}`);
+    return true;
+  }
+  return false;
+}
+
+/**
  * Get or create a chat session for the given session ID and project ID
  */
-function getChatSession(sessionId: string, projectId: string): SessionData {
+async function getChatSession(sessionId: string, projectId: string): Promise<SessionData> {
   const compositeKey = `${sessionId}:${projectId}`;
 
-  if (!chatSessions.has(compositeKey)) {
-    // Get project
-    const project = projects.get(projectId);
-    if (!project) {
-      throw new Error(`Project not found: ${projectId}`);
-    }
+  // Get project
+  const project = projects.get(projectId);
+  if (!project) {
+    throw new Error(`Project not found: ${projectId}`);
+  }
 
+  // Refresh cache if stale (just-in-time refresh)
+  await refreshCacheIfStale(project);
+
+  if (!chatSessions.has(compositeKey)) {
     // Use cached model for this project
     if (!project.cachedContent) {
       throw new Error(`No cached content available for project: ${projectId}`);
@@ -593,7 +617,7 @@ app.post('/api/chat-message', async (req: Request, res: Response) => {
     }
 
     const sessionId = req.session.id;
-    const sessionData = getChatSession(sessionId, projectId);
+    const sessionData = await getChatSession(sessionId, projectId);
 
     console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
     console.log(`[${new Date().toISOString()}] Session: ${sessionId}:${projectId}`);
@@ -799,7 +823,7 @@ app.post('/chat', async (req: Request<{}, ChatResponse | ErrorResponse, ChatRequ
     }
 
     const sessionId = req.session.id;
-    const sessionData = getChatSession(sessionId, projectId);
+    const sessionData = await getChatSession(sessionId, projectId);
 
     console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
     console.log(`[${new Date().toISOString()}] Session: ${sessionId}:${projectId}`);
@@ -1036,6 +1060,9 @@ async function startServer() {
   }
 
   console.log(`[✓] Initialized ${projects.size} project(s)`);
+
+  // Start repository watcher
+  startWatching(projects, REPO_CHECK_INTERVAL);
 
   // Start server
   app.listen(PORT, () => {

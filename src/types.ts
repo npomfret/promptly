@@ -12,6 +12,7 @@ export interface Project {
   branch: string;
   path: string;
   cachedContent?: CachedContent;
+  cacheStale?: boolean;
   lastUpdated: Date;
 }
 

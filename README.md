@@ -4,6 +4,7 @@ A modern TypeScript web server that provides long-lived chat sessions with Googl
 
 ## Features
 
+- **Automatic Repository Watching**: Monitors Git repos for changes every minute and updates context automatically
 - **Context Caching**: Loads real project context (file listings, structure) into Gemini's cache for accurate, grounded responses (75-90% cost savings)
 - **Long-lived sessions**: Maintains conversation context across multiple requests
 - **Custom system prompts**: Configure AI behavior for your specific use case
@@ -12,6 +13,7 @@ A modern TypeScript web server that provides long-lived chat sessions with Googl
 - **RESTful API**: Simple HTTP endpoints for easy integration
 - **Gemini 2.5 Flash**: Uses Gemini 2.5 Flash with context caching (90% cost savings)
 - **Anti-hallucination**: Real file data prevents Gemini from making up file paths
+- **Just-in-Time Cache Refresh**: Preserves chat history while updating project context lazily
 
 ## Prerequisites
 
@@ -322,6 +324,54 @@ This will:
 - **Size**: Depends on project (typically 50-200KB)
 - **Includes**: File listings, directory structure, key config files
 - **Excludes**: node_modules, .git, dist, actual file contents (except config files preview)
+
+## Automatic Repository Watching
+
+The server automatically monitors all configured Git repositories for changes and keeps project context up-to-date.
+
+### How It Works
+
+Every minute, the watcher:
+1. **Checks for updates**: Runs `git fetch` and compares local vs remote commits
+2. **Pulls changes**: If remote has new commits, runs `git pull`
+3. **Marks cache as stale**: Sets a flag instead of immediately refreshing
+4. **Lazy refresh**: Cache is refreshed just-in-time when the next chat request arrives
+
+### Benefits
+
+✅ **Always up-to-date**: Your AI always works with the latest code
+✅ **Preserves chat history**: Existing conversations continue uninterrupted
+✅ **Efficient**: Cache only refreshes when you actually use it
+✅ **Silent operation**: No disruption to active sessions
+
+### Server Logs
+
+When changes are detected, you'll see:
+```
+[!] Updates detected for project abc123def456
+[...] Pulling updates for project abc123def456...
+[✓] Successfully pulled updates for project abc123def456
+[✓] Project abc123def456 updated and marked stale (cache will refresh on next request)
+```
+
+When cache refreshes on next request:
+```
+[...] Cache is stale for project abc123def456, refreshing...
+[...] Gathering project context from: /path/to/project
+[✓] Found 247 git-tracked files
+[✓] Gathered 125843 characters of project context
+[...] Creating cached content for project abc123def456...
+[✓] Created cached content for project abc123def456: cachedContents/xyz789
+[✓] Cache refreshed for project abc123def456
+```
+
+### Technical Details
+
+- **Polling interval**: 1 minute (hardcoded in `server.ts`)
+- **No configuration needed**: Always enabled, works automatically
+- **Requires git credentials**: Private repos need SSH keys or credential helpers
+- **Network timeouts**: 30s for fetch, 60s for pull operations
+- **Handles failures gracefully**: Errors logged but don't crash the server
 
 ## History Logging
 
