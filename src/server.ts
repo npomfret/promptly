@@ -240,6 +240,10 @@ async function createCachedContent(project: Project): Promise<any> {
 
 // Middleware
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Serve static files
+app.use(express.static(join(__dirname, '..', 'public')));
 
 // Pretty-print JSON responses
 app.set('json spaces', 2);
@@ -376,7 +380,289 @@ function writeHistoryEntry(data: {
   }
 }
 
+/**
+ * Helper function to generate HTML table of projects
+ */
+function generateProjectsTable(): string {
+  if (projects.size === 0) {
+    return '<p class="text-muted">No projects configured. Add one above to get started.</p>';
+  }
+
+  const rows = Array.from(projects.values()).map(p => `
+    <tr class="project-item">
+      <td><a href="/project/${p.id}">${p.id}</a></td>
+      <td>${p.gitUrl}</td>
+      <td>${p.branch}</td>
+      <td class="text-muted">${new Date(p.lastUpdated).toLocaleString()}</td>
+      <td class="actions">
+        <button class="btn btn-danger btn-small"
+                hx-delete="/api/projects/${p.id}"
+                hx-target="#project-list"
+                hx-swap="innerHTML"
+                hx-confirm="Are you sure you want to delete ${p.id}?">
+          <i data-lucide="trash-2" class="icon"></i>
+          Delete
+        </button>
+      </td>
+    </tr>
+  `).join('');
+
+  return `
+    <table>
+      <thead>
+        <tr>
+          <th>Project ID</th>
+          <th>Git URL</th>
+          <th>Branch</th>
+          <th>Last Updated</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows}
+      </tbody>
+    </table>
+  `;
+}
+
+/**
+ * Helper function to generate HTML messages
+ */
+function generateMessageHTML(role: 'user' | 'model', message: string, timestamp: Date): string {
+  return `
+    <div class="message ${role}">
+      <div class="message-content">${escapeHtml(message)}</div>
+      <div class="message-time">${new Date(timestamp).toLocaleTimeString()}</div>
+    </div>
+  `;
+}
+
+/**
+ * Escape HTML to prevent XSS
+ */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+    .replace(/\n/g, '<br>');
+}
+
 // Routes
+
+// ============================================================================
+// HTML Frontend Routes (HTMX)
+// ============================================================================
+
+/**
+ * Serve the main project list page
+ */
+app.get('/', (_req: Request, res: Response) => {
+  const indexPath = join(__dirname, '..', 'views', 'index.html');
+  res.sendFile(indexPath);
+});
+
+/**
+ * Serve the chat page for a specific project
+ */
+app.get('/project/:projectId', (req: Request, res: Response) => {
+  const { projectId } = req.params;
+  const project = projects.get(projectId);
+
+  if (!project) {
+    return res.status(404).send(`
+      <html>
+        <head><title>Project Not Found</title></head>
+        <body>
+          <h1>Project Not Found</h1>
+          <p>Project ID: ${projectId}</p>
+          <a href="/">Back to Projects</a>
+        </body>
+      </html>
+    `);
+  }
+
+  // Get chat history if exists
+  const sessionId = req.session.id;
+  const compositeKey = `${sessionId}:${projectId}`;
+  const sessionData = chatSessions.get(compositeKey);
+
+  let messagesHTML = '<p class="text-muted">No messages yet. Start the conversation below.</p>';
+  if (sessionData && sessionData.history.length > 0) {
+    messagesHTML = sessionData.history.map(msg =>
+      generateMessageHTML(msg.role, msg.message, msg.timestamp)
+    ).join('');
+  }
+
+  // Load and populate chat template
+  const chatPath = join(__dirname, '..', 'views', 'chat.html');
+  let chatHTML = readFileSync(chatPath, 'utf-8');
+
+  chatHTML = chatHTML
+    .replace(/\{\{PROJECT_NAME\}\}/g, project.gitUrl.split('/').pop()?.replace('.git', '') || project.id)
+    .replace(/\{\{PROJECT_ID\}\}/g, project.id)
+    .replace(/\{\{PROJECT_BRANCH\}\}/g, project.branch)
+    .replace(/\{\{MESSAGES\}\}/g, messagesHTML);
+
+  res.send(chatHTML);
+});
+
+/**
+ * HTMX: Get projects table HTML
+ */
+app.get('/api/projects-table', (_req: Request, res: Response) => {
+  res.send(generateProjectsTable());
+});
+
+/**
+ * HTMX: Add project and return updated table
+ */
+app.post('/api/projects', async (req: Request, res: Response) => {
+  try {
+    const { gitUrl, branch } = req.body;
+
+    if (!gitUrl) {
+      return res.status(400).send('<p class="error">Git URL is required</p>');
+    }
+
+    // Add project (will clone repository and update config)
+    const project = await addProjectToConfig(gitUrl, CHECKOUT_DIR, branch || 'main');
+
+    // Create cached content for the new project
+    project.cachedContent = await createCachedContent(project);
+
+    // Store in projects map
+    projects.set(project.id, project);
+
+    // Return updated table
+    res.send(generateProjectsTable());
+  } catch (error) {
+    console.error('[ERROR] Failed to add project:', error);
+    res.status(500).send(`<p class="error">Failed to add project: ${error instanceof Error ? error.message : 'Unknown error'}</p>`);
+  }
+});
+
+/**
+ * HTMX: Delete project and return updated table
+ */
+app.delete('/api/projects/:projectId', async (req: Request, res: Response) => {
+  try {
+    const { projectId } = req.params;
+
+    const project = projects.get(projectId);
+    if (!project) {
+      return res.status(404).send('<p class="error">Project not found</p>');
+    }
+
+    // Remove from configuration
+    await removeProjectFromConfig(projectId, project);
+
+    // Clear all sessions for this project
+    for (const [key] of chatSessions.entries()) {
+      if (key.endsWith(`:${projectId}`)) {
+        chatSessions.delete(key);
+      }
+    }
+
+    // Remove from projects map
+    projects.delete(projectId);
+
+    // Return updated table
+    res.send(generateProjectsTable());
+  } catch (error) {
+    console.error('[ERROR] Failed to remove project:', error);
+    res.status(500).send(`<p class="error">Failed to remove project: ${error instanceof Error ? error.message : 'Unknown error'}</p>`);
+  }
+});
+
+/**
+ * HTMX: Send chat message and return new message HTML
+ */
+app.post('/api/chat-message', async (req: Request, res: Response) => {
+  try {
+    const { message, projectId } = req.body;
+
+    if (!projectId) {
+      return res.status(400).send('<p class="error">Project ID is required</p>');
+    }
+
+    if (!message || typeof message !== 'string') {
+      return res.status(400).send('<p class="error">Message is required</p>');
+    }
+
+    const sessionId = req.session.id;
+    const sessionData = getChatSession(sessionId, projectId);
+
+    console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
+    console.log(`[${new Date().toISOString()}] Session: ${sessionId}:${projectId}`);
+    console.log(`[${new Date().toISOString()}] Input Prompt:`);
+    console.log(message);
+    console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
+
+    // Send message and get response
+    const result = await sessionData.chat.sendMessage(message);
+    const response = result.response.text();
+
+    console.log(`[${new Date().toISOString()}] Response:`);
+    console.log(response);
+    console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════\n`);
+
+    // Store in history
+    const timestamp = new Date();
+    const userMessage = { role: 'user' as const, message, timestamp };
+    const modelMessage = { role: 'model' as const, message: response, timestamp };
+
+    sessionData.history.push(userMessage, modelMessage);
+
+    // Write to history file if configured
+    const project = projects.get(projectId);
+    writeHistoryEntry({
+      sessionId,
+      projectId,
+      timestamp,
+      request: message,
+      response,
+      messageCount: sessionData.history.length,
+      cachedContentName: project?.cachedContent?.name
+    });
+
+    // Return HTML for both messages
+    const userHTML = generateMessageHTML('user', message, timestamp);
+    const modelHTML = generateMessageHTML('model', response, timestamp);
+
+    res.send(userHTML + modelHTML);
+  } catch (error) {
+    console.error('[ERROR] Failed to process chat:', error);
+    res.status(500).send(`<p class="error">Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}</p>`);
+  }
+});
+
+/**
+ * HTMX: Clear session and return empty messages
+ */
+app.post('/api/session/clear', (req: Request, res: Response) => {
+  const sessionId = req.session.id;
+  const projectId = req.query.projectId as string;
+
+  if (!projectId) {
+    return res.status(400).send('<p class="error">Project ID is required</p>');
+  }
+
+  const compositeKey = `${sessionId}:${projectId}`;
+
+  if (chatSessions.has(compositeKey)) {
+    chatSessions.delete(compositeKey);
+    console.log(`[${new Date().toISOString()}] Cleared chat session: ${compositeKey}`);
+  }
+
+  res.send('<p class="text-muted">Session cleared. Start a new conversation below.</p>');
+});
+
+// ============================================================================
+// JSON API Routes (original endpoints)
+// ============================================================================
 
 /**
  * Health check endpoint

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat - {{PROJECT_NAME}}</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+  <div class="container">
+    <header class="site-header">
+      <h1><a href="/" class="site-title">Promptly</a></h1>
+    </header>
+
+    <div class="chat-container">
+      <div class="chat-header">
+        <div>
+          <h2>{{PROJECT_NAME}}</h2>
+          <p class="text-muted">{{PROJECT_BRANCH}} • {{PROJECT_ID}}</p>
+        </div>
+        <div class="actions">
+          <button class="btn btn-secondary btn-small"
+                  hx-post="/api/session/clear?projectId={{PROJECT_ID}}"
+                  hx-target="#messages"
+                  hx-swap="innerHTML"
+                  hx-confirm="Are you sure you want to clear the session history?">
+            <i data-lucide="trash-2" class="icon"></i>
+            Clear Session
+          </button>
+          <a href="/" class="btn btn-secondary btn-small">
+            <i data-lucide="arrow-left" class="icon"></i>
+            Back to Projects
+          </a>
+        </div>
+      </div>
+
+      <details class="curl-example">
+        <summary><i data-lucide="terminal" class="icon"></i> API Example (curl)</summary>
+        <div class="curl-code-container">
+          <pre id="curl-code">curl -X POST "http://localhost:3000/chat?projectId={{PROJECT_ID}}" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What is the project about?"}' \
+  -c cookies.txt -b cookies.txt</pre>
+          <button class="btn btn-secondary btn-small copy-btn" onclick="copyCurl()">
+            <i data-lucide="copy" class="icon"></i>
+            Copy
+          </button>
+        </div>
+      </details>
+
+      <div class="chat-messages" id="messages">
+        {{MESSAGES}}
+      </div>
+
+      <div class="chat-input-container">
+        <form class="chat-input-form"
+              hx-post="/api/chat-message"
+              hx-target="#messages"
+              hx-swap="beforeend"
+              hx-on::after-request="if(event.detail.successful) { this.reset(); document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight; }">
+          <input type="hidden" name="projectId" value="{{PROJECT_ID}}">
+          <textarea name="message"
+                    placeholder="Type your message here..."
+                    required
+                    autofocus></textarea>
+          <button type="submit" class="btn btn-primary">
+            <i data-lucide="send" class="icon"></i>
+            <span class="htmx-indicator">Sending...</span>
+            <span class="htmx-not-indicator">Send</span>
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Initialize Lucide icons
+    lucide.createIcons();
+
+    // Re-create icons after HTMX swaps
+    document.body.addEventListener('htmx:afterSwap', () => {
+      lucide.createIcons();
+    });
+
+    // Auto-scroll to bottom on load
+    window.addEventListener('load', () => {
+      const messages = document.getElementById('messages');
+      messages.scrollTop = messages.scrollHeight;
+    });
+
+    // Copy curl command to clipboard
+    function copyCurl() {
+      const curlCode = document.getElementById('curl-code').textContent;
+      navigator.clipboard.writeText(curlCode).then(() => {
+        const btn = event.target;
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i data-lucide="check" class="icon"></i> Copied!';
+        lucide.createIcons();
+        setTimeout(() => {
+          btn.innerHTML = originalText;
+          lucide.createIcons();
+        }, 2000);
+      }).catch(err => {
+        console.error('Failed to copy:', err);
+        alert('Failed to copy to clipboard');
+      });
+    }
+  </script>
+</body>
+</html>
