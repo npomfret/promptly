@@ -23,21 +23,25 @@ A modern TypeScript web server that provides long-lived chat sessions with Googl
 ## Installation
 
 1. Clone or navigate to this directory:
+
 ```bash
 cd gemini-server
 ```
 
 2. Install dependencies:
+
 ```bash
 npm install
 ```
 
 3. Configure environment variables:
+
 ```bash
 cp .env.example .env
 ```
 
 4. Edit `.env` and configure:
+
 ```env
 GEMINI_API_KEY=your_api_key_here
 PROJECT_DIR=/Users/yourname/projects/your-project
@@ -54,6 +58,7 @@ The `PROJECT_DIR` will be injected into the system prompt wherever `{{PROJECT_DI
 4. Copy the key to your `.env` file
 
 The free tier includes:
+
 - 1,500 daily requests for Flash models
 - No credit card required
 - Perfect for development and small projects
@@ -82,11 +87,13 @@ npm run type-check
 ## API Endpoints
 
 ### Health Check
+
 ```bash
 GET /health
 ```
 
 Response:
+
 ```json
 {
   "status": "ok",
@@ -96,6 +103,7 @@ Response:
 ```
 
 ### Send Message
+
 ```bash
 POST /chat
 Content-Type: application/json
@@ -106,6 +114,7 @@ Content-Type: application/json
 ```
 
 Response:
+
 ```json
 {
   "success": true,
@@ -116,11 +125,13 @@ Response:
 ```
 
 ### Get Session Info
+
 ```bash
 GET /session
 ```
 
 Response:
+
 ```json
 {
   "sessionId": "abc123...",
@@ -132,11 +143,13 @@ Response:
 ```
 
 ### Get Chat History
+
 ```bash
 GET /history
 ```
 
 Response:
+
 ```json
 {
   "sessionId": "abc123...",
@@ -157,11 +170,13 @@ Response:
 ```
 
 ### Clear Session
+
 ```bash
 POST /session/clear
 ```
 
 Response:
+
 ```json
 {
   "success": true,
@@ -193,14 +208,14 @@ curl http://localhost:3000/history -b cookies.txt
 ```typescript
 // Using fetch
 const response = await fetch('http://localhost:3000/chat', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  credentials: 'include', // Important: includes cookies for session tracking
-  body: JSON.stringify({
-    message: 'What is a closure?'
-  })
+    method: 'POST',
+    headers: {
+        'Content-Type': 'application/json',
+    },
+    credentials: 'include', // Important: includes cookies for session tracking
+    body: JSON.stringify({
+        message: 'What is a closure?',
+    }),
 });
 
 const data = await response.json();
@@ -221,16 +236,19 @@ The system prompt defines how the AI behaves and is loaded from the **`system-pr
 ### How It Works
 
 **Priority order:**
+
 1. **`system-prompt.md` file** (preferred) - Custom prompt loaded from file
 2. **`SYSTEM_PROMPT` env variable** - Fallback if file doesn't exist
 3. **Default prompt** - "You are a helpful AI assistant."
 
 **Variable Injection:**
+
 - Use `{{PROJECT_DIR}}` in your system prompt
 - It will be replaced with the value from your `.env` file
 - Allows dynamic project directory references
 
 When you start the server, you'll see:
+
 ```
 [✓] Loaded system prompt from: /path/to/system-prompt.md
 [✓] Injected PROJECT_DIR: /Users/yourname/projects/your-project
@@ -242,6 +260,7 @@ When you start the server, you'll see:
 The primary project directory is: `{{PROJECT_DIR}}`
 
 When suggesting commands, reference this directory:
+
 - `cd {{PROJECT_DIR}} && git ls-files`
 - `grep -r 'pattern' {{PROJECT_DIR}}/src`
 ```
@@ -251,6 +270,7 @@ When suggesting commands, reference this directory:
 Simply edit `system-prompt.md` and restart the server. The file is tracked in git, so you can version control your prompt engineering instructions.
 
 **Benefits:**
+
 - Multi-line markdown support
 - Use `{{PROJECT_DIR}}` placeholder for dynamic paths
 - Track changes in git
@@ -263,6 +283,7 @@ The server uses Gemini's **Context Caching** feature to provide Gemini with real
 ### How It Works
 
 On startup, the server:
+
 1. **Gathers project context** from `PROJECT_DIR`:
    - Git-tracked files (`git ls-files`)
    - Directory structure
@@ -282,6 +303,7 @@ On startup, the server:
 ### Startup Output
 
 When the server starts, you'll see:
+
 ```
 [...] Gathering project context from: /Users/yourname/projects/your-project
 [✓] Found 247 git-tracked files
@@ -304,6 +326,7 @@ curl -X POST http://localhost:3000/cache/refresh
 ```
 
 Response:
+
 ```json
 {
   "success": true,
@@ -314,6 +337,7 @@ Response:
 ```
 
 This will:
+
 - Gather fresh project context
 - Create new cached content
 - Clear existing sessions (they use old cache)
@@ -332,6 +356,7 @@ The server automatically monitors all configured Git repositories for changes an
 ### How It Works
 
 Every minute, the watcher:
+
 1. **Checks for updates**: Runs `git fetch` and compares local vs remote commits
 2. **Pulls changes**: If remote has new commits, runs `git pull`
 3. **Marks cache as stale**: Sets a flag instead of immediately refreshing
@@ -347,6 +372,7 @@ Every minute, the watcher:
 ### Server Logs
 
 When changes are detected, you'll see:
+
 ```
 [!] Updates detected for project abc123def456
 [...] Pulling updates for project abc123def456...
@@ -355,6 +381,7 @@ When changes are detected, you'll see:
 ```
 
 When cache refreshes on next request:
+
 ```
 [...] Cache is stale for project abc123def456, refreshing...
 [...] Gathering project context from: /path/to/project
@@ -390,6 +417,7 @@ HISTORY_DIR=./history
 ```
 
 The server will:
+
 - Resolve relative paths to absolute paths before changing directories
 - Create the directory if it doesn't exist
 - Save each request/response pair as a separate JSON file
@@ -457,22 +485,23 @@ The server uses **Gemini 2.0 Flash Experimental** by default. To use a different
 
 ```typescript
 const model = genAI.getGenerativeModel({
-  model: 'gemini-2.0-flash-exp', // Change this
-  systemInstruction: SYSTEM_PROMPT
+    model: 'gemini-2.0-flash-exp', // Change this
+    systemInstruction: SYSTEM_PROMPT,
 });
 ```
 
 ### Available Models (2025)
 
-| Model | Best For | Speed | Cost |
-|-------|----------|-------|------|
-| `gemini-2.0-flash-exp` | General use, fast responses | Fastest | Free tier |
-| `gemini-2.5-flash` | Production, reliable | Fast | Pay as you go |
-| `gemini-2.5-pro` | Complex tasks, best quality | Slower | Pay as you go |
+| Model                  | Best For                    | Speed   | Cost          |
+| ---------------------- | --------------------------- | ------- | ------------- |
+| `gemini-2.0-flash-exp` | General use, fast responses | Fastest | Free tier     |
+| `gemini-2.5-flash`     | Production, reliable        | Fast    | Pay as you go |
+| `gemini-2.5-pro`       | Complex tasks, best quality | Slower  | Pay as you go |
 
 **Note**: Gemini 1.5 models (including `gemini-1.5-flash`) were retired in 2025 and will return 404 errors.
 
 After changing the model, rebuild the project:
+
 ```bash
 npm run build
 npm start
@@ -489,28 +518,34 @@ npm start
 ## Troubleshooting
 
 ### "GEMINI_API_KEY environment variable is required"
+
 - Make sure you created a `.env` file with your API key
 
 ### "PROJECT_DIR environment variable is required"
+
 - Add `PROJECT_DIR=/path/to/your/project` to your `.env` file
 - The path must exist and be a valid directory
 - Server will not start without a valid PROJECT_DIR
 
 ### "PROJECT_DIR does not exist"
+
 - Check the path in your `.env` file is correct
 - Use absolute paths, not relative paths
 - Ensure the directory exists and you have read permissions
 
 ### 404 Error: "models/gemini-1.5-flash is not found"
+
 - The Gemini 1.5 models were retired in 2025
 - Update to `gemini-2.0-flash-exp` or newer (see "Changing Models" section above)
 - Rebuild the project: `npm run build && npm start`
 
 ### TypeScript errors
+
 - Run `npm run type-check` to see detailed type errors
 - Ensure all dependencies are installed with `npm install`
 
 ### Sessions not persisting
+
 - Make sure you're including cookies in your requests (`credentials: 'include'` in fetch)
 - Sessions are in-memory and will be lost on server restart
 

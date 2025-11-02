@@ -1,115 +1,115 @@
-import { ChatSession, CachedContent } from '@google/generative-ai';
+import { CachedContent, ChatSession } from '@google/generative-ai';
 
 export interface ChatMessage {
-  role: 'user' | 'model';
-  message: string;
-  timestamp: Date;
+    role: 'user' | 'model';
+    message: string;
+    timestamp: Date;
 }
 
 export interface Project {
-  id: string;
-  gitUrl: string;
-  branch: string;
-  path: string;
-  cachedContent?: CachedContent;
-  cacheStale?: boolean;
-  lastUpdated: Date;
+    id: string;
+    gitUrl: string;
+    branch: string;
+    path: string;
+    cachedContent?: CachedContent;
+    cacheStale?: boolean;
+    lastUpdated: Date;
 }
 
 export interface ProjectConfig {
-  gitUrl: string;
-  branch?: string;
+    gitUrl: string;
+    branch?: string;
 }
 
 export interface ProjectsConfigFile {
-  projects: ProjectConfig[];
+    projects: ProjectConfig[];
 }
 
 export interface SessionData {
-  projectId: string;
-  chat: ChatSession;
-  history: ChatMessage[];
-  createdAt: Date;
-  lastUsed: Date;
+    projectId: string;
+    chat: ChatSession;
+    history: ChatMessage[];
+    createdAt: Date;
+    lastUsed: Date;
 }
 
 export interface ChatRequest {
-  message: string;
+    message: string;
 }
 
 export interface ChatResponse {
-  success: boolean;
-  sessionId: string;
-  projectId: string;
-  response: string;
-  messageCount: number;
+    success: boolean;
+    sessionId: string;
+    projectId: string;
+    response: string;
+    messageCount: number;
 }
 
 export interface ErrorResponse {
-  error: string;
-  details?: string;
+    error: string;
+    details?: string;
 }
 
 export interface HealthResponse {
-  status: 'ok';
-  sessions: number;
-  systemPrompt: string;
+    status: 'ok';
+    sessions: number;
+    systemPrompt: string;
 }
 
 export interface SessionInfoResponse {
-  sessionId: string;
-  projectId: string | null;
-  hasActiveSession: boolean;
-  messageCount: number;
-  createdAt: Date | null;
-  lastUsed: Date | null;
+    sessionId: string;
+    projectId: string | null;
+    hasActiveSession: boolean;
+    messageCount: number;
+    createdAt: Date | null;
+    lastUsed: Date | null;
 }
 
 export interface HistoryResponse {
-  sessionId: string;
-  projectId: string;
-  history: ChatMessage[];
-  messageCount: number;
+    sessionId: string;
+    projectId: string;
+    history: ChatMessage[];
+    messageCount: number;
 }
 
 export interface ClearSessionResponse {
-  success: boolean;
-  message: string;
-  sessionId: string;
+    success: boolean;
+    message: string;
+    sessionId: string;
 }
 
 export interface CacheRefreshResponse {
-  success: boolean;
-  message: string;
-  cachedContentName: string;
-  clearedSessions: number;
+    success: boolean;
+    message: string;
+    cachedContentName: string;
+    clearedSessions: number;
 }
 
 export interface ProjectInfo {
-  id: string;
-  gitUrl: string;
-  branch: string;
-  path: string;
-  lastUpdated: Date;
+    id: string;
+    gitUrl: string;
+    branch: string;
+    path: string;
+    lastUpdated: Date;
 }
 
 export interface ProjectsListResponse {
-  projects: ProjectInfo[];
+    projects: ProjectInfo[];
 }
 
 export interface AddProjectRequest {
-  gitUrl: string;
-  branch?: string;
+    gitUrl: string;
+    branch?: string;
 }
 
 export interface AddProjectResponse {
-  success: boolean;
-  message: string;
-  project: ProjectInfo;
+    success: boolean;
+    message: string;
+    project: ProjectInfo;
 }
 
 export interface RemoveProjectResponse {
-  success: boolean;
-  message: string;
-  projectId: string;
+    success: boolean;
+    message: string;
+    projectId: string;
 }

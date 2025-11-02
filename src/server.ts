@@ -1,36 +1,32 @@
-import express, {Request, Response, NextFunction} from 'express';
-import session from 'express-session';
-import {GoogleGenerativeAI} from '@google/generative-ai';
-import {GoogleAICacheManager} from '@google/generative-ai/server';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleAICacheManager } from '@google/generative-ai/server';
+import { execSync } from 'child_process';
 import dotenv from 'dotenv';
-import {v4 as uuidv4} from 'uuid';
-import {readFileSync, existsSync, statSync, mkdirSync, writeFileSync} from 'fs';
-import {join, dirname, resolve} from 'path';
-import {fileURLToPath} from 'url';
-import {execSync} from 'child_process';
+import express, { NextFunction, Request, Response } from 'express';
+import session from 'express-session';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs';
+import { dirname, join, resolve } from 'path';
+import { fileURLToPath } from 'url';
+import { v4 as uuidv4 } from 'uuid';
+import { addProject as addProjectToConfig, initializeProjects, removeProject as removeProjectFromConfig } from './projectManager.js';
+import { startWatching } from './repoWatcher.js';
 import type {
-    SessionData,
-    ChatRequest,
-    ChatResponse,
-    ErrorResponse,
-    HealthResponse,
-    SessionInfoResponse,
-    HistoryResponse,
-    ClearSessionResponse,
-    CacheRefreshResponse,
-    ProjectsListResponse,
     AddProjectRequest,
     AddProjectResponse,
-    RemoveProjectResponse,
+    CacheRefreshResponse,
+    ChatRequest,
+    ChatResponse,
+    ClearSessionResponse,
+    ErrorResponse,
+    HealthResponse,
+    HistoryResponse,
     Project,
-    ProjectInfo
+    ProjectInfo,
+    ProjectsListResponse,
+    RemoveProjectResponse,
+    SessionData,
+    SessionInfoResponse,
 } from './types.js';
-import {
-    initializeProjects,
-    addProject as addProjectToConfig,
-    removeProject as removeProjectFromConfig
-} from './projectManager.js';
-import {startWatching} from './repoWatcher.js';
 
 // Load environment variables
 dotenv.config();
@@ -110,7 +106,7 @@ function gatherProjectContext(projectDir: string): string {
         const gitFiles = execSync('git ls-files', {
             cwd: projectDir,
             encoding: 'utf-8',
-            maxBuffer: 10 * 1024 * 1024 // 10MB buffer
+            maxBuffer: 10 * 1024 * 1024, // 10MB buffer
         });
         context.push('## Git Tracked Files');
         context.push('```');
@@ -128,7 +124,7 @@ function gatherProjectContext(projectDir: string): string {
         const tree = execSync('find . -type d -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/dist/*" | head -100', {
             cwd: projectDir,
             encoding: 'utf-8',
-            maxBuffer: 1024 * 1024
+            maxBuffer: 1024 * 1024,
         });
         context.push('## Directory Structure (top 100)');
         context.push('```');
@@ -143,7 +139,7 @@ function gatherProjectContext(projectDir: string): string {
         'package.json',
         'tsconfig.json',
         '.claude/settings.json',
-        'README.md'
+        'README.md',
     ];
 
     context.push('## Project Configuration Files');
@@ -205,7 +201,7 @@ if (HISTORY_DIR) {
             console.log(`[✓] History directory exists: ${HISTORY_DIR}`);
         } else {
             // Create directory if it doesn't exist
-            mkdirSync(HISTORY_DIR, {recursive: true});
+            mkdirSync(HISTORY_DIR, { recursive: true });
             console.log(`[✓] Created history directory: ${HISTORY_DIR}`);
         }
     } catch (error) {
@@ -242,11 +238,14 @@ async function createCachedContent(project: Project): Promise<any> {
         contents: [
             {
                 role: 'user',
-                parts: [{text: `Here is the project context for reference:\n\n${projectContext}`}],
+                parts: [{ text: `Here is the project context for reference:\n\n${projectContext}` }],
             },
             {
                 role: 'model',
-                parts: [{text: 'I have received and processed the project context. I can now see all git-tracked files, the directory structure, and configuration files. I will use this information when analyzing and enhancing prompts. What prompt would you like me to help with?'}],
+                parts: [{
+                    text:
+                        'I have received and processed the project context. I can now see all git-tracked files, the directory structure, and configuration files. I will use this information when analyzing and enhancing prompts. What prompt would you like me to help with?',
+                }],
             },
         ],
         systemInstruction: systemPrompt,
@@ -261,7 +260,7 @@ async function createCachedContent(project: Project): Promise<any> {
 
 // Middleware
 app.use(express.json());
-app.use(express.urlencoded({extended: true}));
+app.use(express.urlencoded({ extended: true }));
 
 // Serve static files
 app.use(express.static(join(__dirname, '..', 'public')));
@@ -276,9 +275,9 @@ app.use(
         saveUninitialized: true,
         cookie: {
             secure: false, // Set to true if using HTTPS
-            maxAge: SESSION_MAX_AGE
-        }
-    })
+            maxAge: SESSION_MAX_AGE,
+        },
+    }),
 );
 
 // Extend session type
@@ -332,7 +331,7 @@ async function getChatSession(sessionId: string, projectId: string): Promise<Ses
         const model = genAI.getGenerativeModelFromCachedContent(project.cachedContent);
 
         const chat = model.startChat({
-            history: []
+            history: [],
         });
 
         const sessionData: SessionData = {
@@ -340,7 +339,7 @@ async function getChatSession(sessionId: string, projectId: string): Promise<Ses
             chat,
             history: [],
             createdAt: new Date(),
-            lastUsed: new Date()
+            lastUsed: new Date(),
         };
 
         chatSessions.set(compositeKey, sessionData);
@@ -386,7 +385,7 @@ function writeHistoryEntry(data: {
         // Create project-specific history directory
         const projectHistoryDir = join(HISTORY_DIR, data.projectId);
         if (!existsSync(projectHistoryDir)) {
-            mkdirSync(projectHistoryDir, {recursive: true});
+            mkdirSync(projectHistoryDir, { recursive: true });
         }
 
         // Create filename with ISO timestamp for easy sorting
@@ -410,8 +409,8 @@ function writeHistoryEntry(data: {
                 serverVersion: '1.0.0',
                 model: 'gemini-2.5-flash',
                 projectPath: project?.path,
-                gitUrl: project?.gitUrl
-            }
+                gitUrl: project?.gitUrl,
+            },
         };
 
         // Write to file
@@ -431,13 +430,15 @@ function generateProjectsTable(): string {
         return '<p class="text-muted">No projects configured. Add one above to get started.</p>';
     }
 
-    const rows = Array.from(projects.values()).map(p => {
-        // Load system prompt for this project
-        const systemPrompt = loadSystemPrompt(p.path);
-        const promptPreview = systemPrompt.substring(0, 100) + (systemPrompt.length > 100 ? '...' : '');
-        const promptId = `prompt-${p.id}`;
+    const rows = Array
+        .from(projects.values())
+        .map(p => {
+            // Load system prompt for this project
+            const systemPrompt = loadSystemPrompt(p.path);
+            const promptPreview = systemPrompt.substring(0, 100) + (systemPrompt.length > 100 ? '...' : '');
+            const promptId = `prompt-${p.id}`;
 
-        return `
+            return `
     <tr class="project-item">
       <td><a href="/project/${p.id}">${p.id}</a></td>
       <td>${p.gitUrl}</td>
@@ -468,7 +469,8 @@ function generateProjectsTable(): string {
       </td>
     </tr>
   `;
-    }).join('');
+        })
+        .join('');
 
     return `
     <table>
@@ -532,7 +534,7 @@ app.get('/', (_req: Request, res: Response) => {
  * Serve the chat page for a specific project
  */
 app.get('/project/:projectId', (req: Request, res: Response) => {
-    const {projectId} = req.params;
+    const { projectId } = req.params;
     const project = projects.get(projectId);
 
     if (!project) {
@@ -559,8 +561,11 @@ app.get('/project/:projectId', (req: Request, res: Response) => {
                 // Read all history files, sorted by timestamp (oldest first)
                 const files = execSync(`ls "${projectHistoryDir}"/*.json 2>/dev/null | sort || true`, {
                     encoding: 'utf-8',
-                    maxBuffer: 10 * 1024 * 1024
-                }).trim().split('\n').filter(f => f);
+                    maxBuffer: 10 * 1024 * 1024,
+                })
+                    .trim()
+                    .split('\n')
+                    .filter(f => f);
 
                 if (files.length > 0) {
                     const historyEntries: Array<{
@@ -576,7 +581,7 @@ app.get('/project/:projectId', (req: Request, res: Response) => {
                             historyEntries.push({
                                 timestamp: new Date(entry.timestamp),
                                 request: entry.request,
-                                response: entry.response
+                                response: entry.response,
                             });
                         } catch (error) {
                             console.error(`[ERROR] Failed to read history file ${file}:`, error);
@@ -587,11 +592,13 @@ app.get('/project/:projectId', (req: Request, res: Response) => {
                     historyEntries.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
                     // Generate HTML
-                    messagesHTML = historyEntries.map(entry => {
-                        const userHTML = generateMessageHTML('user', entry.request, entry.timestamp);
-                        const modelHTML = generateMessageHTML('model', entry.response, entry.timestamp);
-                        return userHTML + modelHTML;
-                    }).join('');
+                    messagesHTML = historyEntries
+                        .map(entry => {
+                            const userHTML = generateMessageHTML('user', entry.request, entry.timestamp);
+                            const modelHTML = generateMessageHTML('model', entry.response, entry.timestamp);
+                            return userHTML + modelHTML;
+                        })
+                        .join('');
                 }
             }
         } catch (error) {
@@ -606,9 +613,7 @@ app.get('/project/:projectId', (req: Request, res: Response) => {
         const sessionData = chatSessions.get(compositeKey);
 
         if (sessionData && sessionData.history.length > 0) {
-            messagesHTML = sessionData.history.map(msg =>
-                generateMessageHTML(msg.role, msg.message, msg.timestamp, sessionId)
-            ).join('');
+            messagesHTML = sessionData.history.map(msg => generateMessageHTML(msg.role, msg.message, msg.timestamp, sessionId)).join('');
         }
     }
 
@@ -642,7 +647,7 @@ app.get('/api/projects-table', (_req: Request, res: Response) => {
  */
 app.post('/api/projects', async (req: Request, res: Response) => {
     try {
-        const {gitUrl, branch} = req.body;
+        const { gitUrl, branch } = req.body;
 
         if (!gitUrl) {
             return res.status(400).send('<p class="error">Git URL is required</p>');
@@ -670,7 +675,7 @@ app.post('/api/projects', async (req: Request, res: Response) => {
  */
 app.delete('/api/projects/:projectId', async (req: Request, res: Response) => {
     try {
-        const {projectId} = req.params;
+        const { projectId } = req.params;
 
         const project = projects.get(projectId);
         if (!project) {
@@ -703,7 +708,7 @@ app.delete('/api/projects/:projectId', async (req: Request, res: Response) => {
  */
 app.post('/api/chat-message', async (req: Request, res: Response) => {
     try {
-        const {message, projectId} = req.body;
+        const { message, projectId } = req.body;
 
         if (!projectId) {
             return res.status(400).send('<p class="error">Project ID is required</p>');
@@ -732,8 +737,8 @@ app.post('/api/chat-message', async (req: Request, res: Response) => {
 
         // Store in history
         const timestamp = new Date();
-        const userMessage = {role: 'user' as const, message, timestamp};
-        const modelMessage = {role: 'model' as const, message: response, timestamp};
+        const userMessage = { role: 'user' as const, message, timestamp };
+        const modelMessage = { role: 'model' as const, message: response, timestamp };
 
         sessionData.history.push(userMessage, modelMessage);
 
@@ -746,7 +751,7 @@ app.post('/api/chat-message', async (req: Request, res: Response) => {
             request: message,
             response,
             messageCount: sessionData.history.length,
-            cachedContentName: project?.cachedContent?.name
+            cachedContentName: project?.cachedContent?.name,
         });
 
         // Return HTML for both messages
@@ -785,8 +790,11 @@ app.get('/api/project-history', (req: Request, res: Response) => {
         // Read all history files
         const files = execSync(`ls -t "${projectHistoryDir}"/*.json 2>/dev/null || true`, {
             encoding: 'utf-8',
-            maxBuffer: 10 * 1024 * 1024
-        }).trim().split('\n').filter(f => f);
+            maxBuffer: 10 * 1024 * 1024,
+        })
+            .trim()
+            .split('\n')
+            .filter(f => f);
 
         if (files.length === 0) {
             return res.send('<p class="text-muted">No history found for this project yet.</p>');
@@ -808,7 +816,7 @@ app.get('/api/project-history', (req: Request, res: Response) => {
                     timestamp: new Date(entry.timestamp),
                     request: entry.request,
                     response: entry.response,
-                    sessionId: entry.sessionId
+                    sessionId: entry.sessionId,
                 });
             } catch (error) {
                 console.error(`[ERROR] Failed to read history file ${file}:`, error);
@@ -819,11 +827,13 @@ app.get('/api/project-history', (req: Request, res: Response) => {
         historyEntries.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
         // Generate HTML
-        const messagesHTML = historyEntries.map(entry => {
-            const userHTML = generateMessageHTML('user', entry.request, entry.timestamp, entry.sessionId);
-            const modelHTML = generateMessageHTML('model', entry.response, entry.timestamp, entry.sessionId);
-            return userHTML + modelHTML;
-        }).join('');
+        const messagesHTML = historyEntries
+            .map(entry => {
+                const userHTML = generateMessageHTML('user', entry.request, entry.timestamp, entry.sessionId);
+                const modelHTML = generateMessageHTML('model', entry.response, entry.timestamp, entry.sessionId);
+                return userHTML + modelHTML;
+            })
+            .join('');
 
         res.send(messagesHTML || '<p class="text-muted">No history found for this project yet.</p>');
     } catch (error) {
@@ -864,7 +874,7 @@ app.get('/health', (_req: Request, res: Response<HealthResponse>) => {
     res.json({
         status: 'ok',
         sessions: chatSessions.size,
-        systemPrompt: 'Multi-project server'
+        systemPrompt: 'Multi-project server',
     });
 });
 
@@ -877,7 +887,7 @@ app.get('/session', (req: Request, res: Response<SessionInfoResponse | ErrorResp
 
     if (!projectId) {
         return res.status(400).json({
-            error: 'projectId query parameter is required'
+            error: 'projectId query parameter is required',
         });
     }
 
@@ -890,7 +900,7 @@ app.get('/session', (req: Request, res: Response<SessionInfoResponse | ErrorResp
         hasActiveSession: !!sessionData,
         messageCount: sessionData ? sessionData.history.length : 0,
         createdAt: sessionData?.createdAt || null,
-        lastUsed: sessionData?.lastUsed || null
+        lastUsed: sessionData?.lastUsed || null,
     });
 });
 
@@ -903,7 +913,7 @@ app.post('/session/clear', (req: Request, res: Response<ClearSessionResponse | E
 
     if (!projectId) {
         return res.status(400).json({
-            error: 'projectId query parameter is required'
+            error: 'projectId query parameter is required',
         });
     }
 
@@ -917,7 +927,7 @@ app.post('/session/clear', (req: Request, res: Response<ClearSessionResponse | E
     res.json({
         success: true,
         message: 'Session cleared',
-        sessionId
+        sessionId,
     });
 });
 
@@ -930,14 +940,14 @@ app.post('/cache/refresh', async (req: Request, res: Response<CacheRefreshRespon
 
         if (!projectId) {
             return res.status(400).json({
-                error: 'projectId query parameter is required'
+                error: 'projectId query parameter is required',
             });
         }
 
         const project = projects.get(projectId);
         if (!project) {
             return res.status(404).json({
-                error: `Project not found: ${projectId}`
+                error: `Project not found: ${projectId}`,
             });
         }
 
@@ -960,13 +970,13 @@ app.post('/cache/refresh', async (req: Request, res: Response<CacheRefreshRespon
             success: true,
             message: `Cache refreshed successfully for project ${projectId}`,
             cachedContentName: newCache.name,
-            clearedSessions: clearedCount
+            clearedSessions: clearedCount,
         });
     } catch (error) {
         console.error('[ERROR] Failed to refresh cache:', error);
         res.status(500).json({
             error: 'Failed to refresh cache',
-            details: error instanceof Error ? error.message : 'Unknown error'
+            details: error instanceof Error ? error.message : 'Unknown error',
         });
     }
 });
@@ -976,18 +986,18 @@ app.post('/cache/refresh', async (req: Request, res: Response<CacheRefreshRespon
  */
 app.post('/enhance', async (req: Request<{}, ChatResponse | ErrorResponse, ChatRequest>, res: Response<ChatResponse | ErrorResponse>) => {
     try {
-        const {message} = req.body;
+        const { message } = req.body;
         const projectId = req.query.projectId as string;
 
         if (!projectId) {
             return res.status(400).json({
-                error: 'projectId query parameter is required'
+                error: 'projectId query parameter is required',
             });
         }
 
         if (!message || typeof message !== 'string') {
             return res.status(400).json({
-                error: 'Message is required and must be a string'
+                error: 'Message is required and must be a string',
             });
         }
 
@@ -1025,13 +1035,13 @@ app.post('/enhance', async (req: Request<{}, ChatResponse | ErrorResponse, ChatR
             {
                 role: 'user',
                 message,
-                timestamp
+                timestamp,
             },
             {
                 role: 'model',
                 message: response,
-                timestamp
-            }
+                timestamp,
+            },
         );
 
         // Write to history file if configured
@@ -1043,7 +1053,7 @@ app.post('/enhance', async (req: Request<{}, ChatResponse | ErrorResponse, ChatR
             request: message,
             response,
             messageCount: sessionData.history.length,
-            cachedContentName: project?.cachedContent?.name
+            cachedContentName: project?.cachedContent?.name,
         });
 
         res.json({
@@ -1051,13 +1061,13 @@ app.post('/enhance', async (req: Request<{}, ChatResponse | ErrorResponse, ChatR
             sessionId,
             projectId,
             response,
-            messageCount: sessionData.history.length
+            messageCount: sessionData.history.length,
         });
     } catch (error) {
         console.error('[ERROR] Failed to process chat:', error);
         res.status(500).json({
             error: 'Failed to process message',
-            details: error instanceof Error ? error.message : 'Unknown error'
+            details: error instanceof Error ? error.message : 'Unknown error',
         });
     }
 });
@@ -1071,7 +1081,7 @@ app.get('/history', (req: Request, res: Response<HistoryResponse | ErrorResponse
 
     if (!projectId) {
         return res.status(400).json({
-            error: 'projectId query parameter is required'
+            error: 'projectId query parameter is required',
         });
     }
 
@@ -1083,7 +1093,7 @@ app.get('/history', (req: Request, res: Response<HistoryResponse | ErrorResponse
             sessionId,
             projectId,
             history: [],
-            messageCount: 0
+            messageCount: 0,
         });
     }
 
@@ -1091,7 +1101,7 @@ app.get('/history', (req: Request, res: Response<HistoryResponse | ErrorResponse
         sessionId,
         projectId,
         history: sessionData.history,
-        messageCount: sessionData.history.length
+        messageCount: sessionData.history.length,
     });
 });
 
@@ -1104,11 +1114,11 @@ app.get('/projects', (_req: Request, res: Response<ProjectsListResponse>) => {
         gitUrl: p.gitUrl,
         branch: p.branch,
         path: p.path,
-        lastUpdated: p.lastUpdated
+        lastUpdated: p.lastUpdated,
     }));
 
     res.json({
-        projects: projectList
+        projects: projectList,
     });
 });
 
@@ -1117,11 +1127,11 @@ app.get('/projects', (_req: Request, res: Response<ProjectsListResponse>) => {
  */
 app.post('/projects', async (req: Request<{}, AddProjectResponse | ErrorResponse, AddProjectRequest>, res: Response<AddProjectResponse | ErrorResponse>) => {
     try {
-        const {gitUrl, branch} = req.body;
+        const { gitUrl, branch } = req.body;
 
         if (!gitUrl) {
             return res.status(400).json({
-                error: 'gitUrl is required'
+                error: 'gitUrl is required',
             });
         }
 
@@ -1142,14 +1152,14 @@ app.post('/projects', async (req: Request<{}, AddProjectResponse | ErrorResponse
                 gitUrl: project.gitUrl,
                 branch: project.branch,
                 path: project.path,
-                lastUpdated: project.lastUpdated
-            }
+                lastUpdated: project.lastUpdated,
+            },
         });
     } catch (error) {
         console.error('[ERROR] Failed to add project:', error);
         res.status(500).json({
             error: 'Failed to add project',
-            details: error instanceof Error ? error.message : 'Unknown error'
+            details: error instanceof Error ? error.message : 'Unknown error',
         });
     }
 });
@@ -1159,12 +1169,12 @@ app.post('/projects', async (req: Request<{}, AddProjectResponse | ErrorResponse
  */
 app.delete('/projects/:projectId', async (req: Request, res: Response<RemoveProjectResponse | ErrorResponse>) => {
     try {
-        const {projectId} = req.params;
+        const { projectId } = req.params;
 
         const project = projects.get(projectId);
         if (!project) {
             return res.status(404).json({
-                error: `Project not found: ${projectId}`
+                error: `Project not found: ${projectId}`,
             });
         }
 
@@ -1184,13 +1194,13 @@ app.delete('/projects/:projectId', async (req: Request, res: Response<RemoveProj
         res.json({
             success: true,
             message: `Project removed successfully: ${projectId}`,
-            projectId
+            projectId,
         });
     } catch (error) {
         console.error('[ERROR] Failed to remove project:', error);
         res.status(500).json({
             error: 'Failed to remove project',
-            details: error instanceof Error ? error.message : 'Unknown error'
+            details: error instanceof Error ? error.message : 'Unknown error',
         });
     }
 });
@@ -1203,7 +1213,7 @@ app.post('/shutdown', (_req: Request, res: Response) => {
 
     res.json({
         success: true,
-        message: 'Server shutting down...'
+        message: 'Server shutting down...',
     });
 
     // Give response time to send before shutting down
@@ -1218,7 +1228,7 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
     console.error('[ERROR] Unhandled error:', err);
     res.status(500).json({
         error: 'Internal server error',
-        details: err.message
+        details: err.message,
     });
 });
 
@@ -1283,7 +1293,7 @@ Ready to accept requests!
 }
 
 // Start the server - will die if initialization fails
-startServer().catch((error) => {
+startServer().catch(error => {
     console.error('\n╔════════════════════════════════════════════════════════════════╗');
     console.error('║  FATAL: Server startup failed                                 ║');
     console.error('╚════════════════════════════════════════════════════════════════╝\n');
