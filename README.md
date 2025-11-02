@@ -105,7 +105,7 @@ Response:
 ### Send Message
 
 ```bash
-POST /chat
+POST /enhance
 Content-Type: application/json
 
 {
@@ -189,12 +189,12 @@ Response:
 
 ```bash
 # Send a message
-curl -X POST http://localhost:3000/chat \
+curl -X POST http://localhost:3000/enhance \
   -H "Content-Type: application/json" \
   -d '{"message": "Explain closures in JavaScript"}'
 
 # Follow-up question (same session via cookie)
-curl -X POST http://localhost:3000/chat \
+curl -X POST http://localhost:3000/enhance \
   -H "Content-Type: application/json" \
   -b cookies.txt -c cookies.txt \
   -d '{"message": "Can you give me an example?"}'
@@ -207,7 +207,7 @@ curl http://localhost:3000/history -b cookies.txt
 
 ```typescript
 // Using fetch
-const response = await fetch('http://localhost:3000/chat', {
+const response = await fetch('http://localhost:3000/enhance', {
     method: 'POST',
     headers: {
         'Content-Type': 'application/json',
