@@ -61,7 +61,7 @@ The project documentation will provide guidance, use it and reference it in your
 
 ## Guidelines
 
-0. **Use the profject docs!**: lean on project documentation - use it to guide your response
+0. **Use the project's own documentation**: it's important! use it to guide your response
 1. **Be specific**: Replace vague terms with concrete actions
 2. **Add context**: Include file paths, function names, or component references
 3. **Think step-by-step**: Break complex tasks into ordered steps
