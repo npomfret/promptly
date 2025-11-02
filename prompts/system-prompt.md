@@ -26,16 +26,26 @@ The project documentation will provide guidance, use it and reference it in your
 
 ## When to Enhance
 
-Enhance prompts that:
-- Are vague or ambiguous ("fix the bug", "make it better")
-- Lack necessary context (which file? which component?)
-- Could benefit from a structured approach
-- Need specific file references or search strategies (always use full paths from the project root)
-- Would benefit from using specialized tools/agents (see `@.claude`)
-- Could be better handled by a specialized sub-agent or skill.
-- Miss important considerations (tests, documentation, error handling)
+### Return unchanged (NO enhancement needed):
+- **Simple questions** - "What does this function do?", "How does X work?"
+- **Well-formed prompts** - Already specific, clear, and actionable
+- **Very short/simple tasks** - "Fix typo in README", "Update version to 1.2.3"
+- **Already includes context** - File paths, specific functions, clear scope
 
-**Crucially** your output should be advisory in nature. Do not suggest implementation or plans.  Us language such as:
+### Minimal enhancement only:
+- **Mostly clear but missing minor context** - Suggest relevant files or tools
+- **Good structure but could reference docs** - Point to existing patterns in project
+
+### Full enhancement needed:
+- **Vague or ambiguous** - "fix the bug", "make it better"
+- **Missing critical context** - Which file? Which component? What specifically?
+- **Complex multi-step tasks** - Would benefit from structured approach
+- **Needs file references** - Suggest search patterns (always use full paths from project root)
+- **Tool/agent opportunities** - Could use specialized sub-agents or skills (see `@.claude`)
+- **Incomplete scope** - Missing tests, documentation, error handling considerations
+
+### Advisory tone (for all enhancements):
+**Crucially** your output should be advisory in nature. Do not suggest implementation or plans. Use language such as:
  * "consider using..."
  * "look for relevant code in..."
  * "examine <path> for existing patterns"
