@@ -718,24 +718,49 @@ app.post('/api/chat-message', async (req: Request, res: Response) => {
             return res.status(400).send('<p class="error">Message is required</p>');
         }
 
+        // Check if message starts or ends with underscore
+        const hasUnderscore = message.startsWith('_') || message.endsWith('_');
+
+        if (!hasUnderscore) {
+            // No underscore - return prompt unaltered without invoking Gemini
+            console.log(`[${new Date().toISOString()}] No underscore detected - bypassing Gemini`);
+            console.log(`[${new Date().toISOString()}] Prompt: ${message}`);
+
+            const timestamp = new Date();
+            const userHTML = generateMessageHTML('user', message, timestamp, req.session.id);
+            const modelHTML = generateMessageHTML('model', message, timestamp, req.session.id);
+
+            return res.send(userHTML + modelHTML);
+        }
+
+        // Strip underscores from start and end
+        let processedMessage = message;
+        if (message.startsWith('_')) {
+            processedMessage = processedMessage.slice(1);
+        }
+        if (processedMessage.endsWith('_')) {
+            processedMessage = processedMessage.slice(0, -1);
+        }
+
         const sessionId = req.session.id;
         const sessionData = await getChatSession(sessionId, projectId);
 
         console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
         console.log(`[${new Date().toISOString()}] Session: ${sessionId}:${projectId}`);
-        console.log(`[${new Date().toISOString()}] Input Prompt:`);
-        console.log(message);
+        console.log(`[${new Date().toISOString()}] Original Prompt: ${message}`);
+        console.log(`[${new Date().toISOString()}] Processed Prompt (underscores stripped):`);
+        console.log(processedMessage);
         console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
 
-        // Send message and get response
-        const result = await sessionData.chat.sendMessage(message);
+        // Send processed message and get response
+        const result = await sessionData.chat.sendMessage(processedMessage);
         const response = result.response.text();
 
         console.log(`[${new Date().toISOString()}] Response:`);
         console.log(response);
         console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════\n`);
 
-        // Store in history
+        // Store in history (using original message)
         const timestamp = new Date();
         const userMessage = { role: 'user' as const, message, timestamp };
         const modelMessage = { role: 'model' as const, message: response, timestamp };
@@ -754,7 +779,7 @@ app.post('/api/chat-message', async (req: Request, res: Response) => {
             cachedContentName: project?.cachedContent?.name,
         });
 
-        // Return HTML for both messages
+        // Return HTML for both messages (user message shows original, sent to Gemini was processed)
         const userHTML = generateMessageHTML('user', message, timestamp, sessionId);
         const modelHTML = generateMessageHTML('model', response, timestamp, sessionId);
 
