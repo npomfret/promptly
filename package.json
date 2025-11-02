@@ -9,15 +9,23 @@
     "stop": "./scripts/stop.sh",
     "projects": "./scripts/projects.sh",
     "dev": "tsx watch src/server.ts",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "format": "dprint fmt",
+    "format:check": "dprint check"
   },
-  "keywords": ["gemini", "ai", "express", "session", "typescript"],
+  "keywords": [
+    "gemini",
+    "ai",
+    "express",
+    "session",
+    "typescript"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
-    "express": "^4.21.1",
     "dotenv": "^16.4.5",
+    "express": "^4.21.1",
     "express-session": "^1.18.1",
     "uuid": "^11.0.3"
   },
@@ -26,6 +34,7 @@
     "@types/express-session": "^1.18.0",
     "@types/node": "^22.8.7",
     "@types/uuid": "^10.0.0",
+    "dprint": "^0.50.2",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"
   }
