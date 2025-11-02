@@ -923,7 +923,6 @@ app.get('/session', (req: Request, res: Response<SessionInfoResponse | ErrorResp
         sessionId,
         projectId,
         hasActiveSession: !!sessionData,
-        messageCount: sessionData ? sessionData.history.length : 0,
         createdAt: sessionData?.createdAt || null,
         lastUsed: sessionData?.lastUsed || null,
     });
@@ -1086,7 +1085,6 @@ app.post('/enhance', async (req: Request<{}, ChatResponse | ErrorResponse, ChatR
             sessionId,
             projectId,
             response,
-            messageCount: sessionData.history.length,
         });
     } catch (error) {
         console.error('[ERROR] Failed to process chat:', error);
@@ -1118,7 +1116,6 @@ app.get('/history', (req: Request, res: Response<HistoryResponse | ErrorResponse
             sessionId,
             projectId,
             history: [],
-            messageCount: 0,
         });
     }
 
@@ -1126,7 +1123,6 @@ app.get('/history', (req: Request, res: Response<HistoryResponse | ErrorResponse
         sessionId,
         projectId,
         history: sessionData.history,
-        messageCount: sessionData.history.length,
     });
 });
 
@@ -1296,7 +1292,7 @@ Endpoints:
   POST   /projects              - Add new project
   DELETE /projects/:projectId   - Remove project
   GET    /session?projectId=ID  - Get current session info
-  POST   /chat?projectId=ID     - Send message { "message": "your text" }
+  POST   /enhance?projectId=ID  - Send message { "message": "your text" }
   GET    /history?projectId=ID  - Get chat history for current session
   POST   /session/clear?projectId=ID - Clear current session
   POST   /cache/refresh?projectId=ID - Refresh project context cache

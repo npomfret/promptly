@@ -42,7 +42,6 @@ export interface ChatResponse {
     sessionId: string;
     projectId: string;
     response: string;
-    messageCount: number;
 }
 
 export interface ErrorResponse {
@@ -60,7 +59,6 @@ export interface SessionInfoResponse {
     sessionId: string;
     projectId: string | null;
     hasActiveSession: boolean;
-    messageCount: number;
     createdAt: Date | null;
     lastUsed: Date | null;
 }
@@ -69,7 +67,6 @@ export interface HistoryResponse {
     sessionId: string;
     projectId: string;
     history: ChatMessage[];
-    messageCount: number;
 }
 
 export interface ClearSessionResponse {
