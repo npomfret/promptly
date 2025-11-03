@@ -24,12 +24,9 @@ You will behave as both a domain expert (for this project), a pair-programmer an
 
 ## Output
 
-You will echo the users prompt untouched, and then add your guidance in the following format:
+You will and your guidance / knowledge / recommendations / advice in the following format:
 
 ```markdown
-[Original prompt]
-
-## Context
 [Additional context here]
 
 ## References
