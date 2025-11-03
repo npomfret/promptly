@@ -7,10 +7,31 @@ import { Project, ProjectConfig, ProjectsConfigFile } from './types.js';
 const PROJECTS_CONFIG_FILE = 'projects.json';
 
 /**
- * Generate a unique project ID from a git URL using SHA-256 hash
+ * Normalize a git URL to a canonical form (user/repo format)
+ * Handles both HTTPS and SSH git URLs
  */
-export function generateProjectId(gitUrl: string): string {
-    return createHash('sha256').update(gitUrl).digest('hex').substring(0, 12);
+function normalizeGitUrl(gitUrl: string): string {
+    // Remove .git suffix if present
+    let normalized = gitUrl.replace(/\.git$/, '');
+
+    // Convert SSH format (git@github.com:user/repo) to HTTPS-like format
+    normalized = normalized.replace(/^git@([^:]+):/, 'https://$1/');
+
+    // Remove protocol prefix to get just domain/user/repo
+    normalized = normalized.replace(/^https?:\/\//, '');
+
+    return normalized.toLowerCase();
+}
+
+/**
+ * Generate a unique project ID from a git URL and branch using SHA-256 hash
+ * Different git URL formats (HTTPS vs SSH) for the same repo will generate the same ID
+ * Different branches will generate different IDs
+ */
+export function generateProjectId(gitUrl: string, branch: string = 'main'): string {
+    const normalizedUrl = normalizeGitUrl(gitUrl);
+    const composite = `${normalizedUrl}#${branch}`;
+    return createHash('sha256').update(composite).digest('hex').substring(0, 12);
 }
 
 /**
@@ -98,9 +119,9 @@ export async function initializeProjects(checkoutDir: string): Promise<Map<strin
 
     // Initialize each project
     for (const projectConfig of config.projects) {
-        const projectId = generateProjectId(projectConfig.gitUrl);
-        const projectPath = path.join(checkoutDir, projectId);
         const branch = projectConfig.branch || 'main';
+        const projectId = generateProjectId(projectConfig.gitUrl, branch);
+        const projectPath = path.join(checkoutDir, projectId);
 
         // Clone repository if needed
         await cloneRepository(projectConfig.gitUrl, projectPath, branch);
@@ -129,17 +150,20 @@ export async function addProject(
     checkoutDir: string,
     branch: string = 'main',
 ): Promise<Project> {
-    // Generate project ID
-    const projectId = generateProjectId(gitUrl);
+    // Generate project ID (includes branch)
+    const projectId = generateProjectId(gitUrl, branch);
     const projectPath = path.join(checkoutDir, projectId);
 
     // Load existing configuration
     const config = await loadProjectsConfig();
 
-    // Check if project already exists
-    const exists = config.projects.some(p => p.gitUrl === gitUrl);
+    // Check if project already exists (same URL and branch combination)
+    const exists = config.projects.some(p => {
+        const existingBranch = p.branch || 'main';
+        return generateProjectId(p.gitUrl, existingBranch) === projectId;
+    });
     if (exists) {
-        throw new Error(`Project with git URL ${gitUrl} already exists`);
+        throw new Error(`Project with git URL ${gitUrl} and branch ${branch} already exists`);
     }
 
     // Clone repository
@@ -169,7 +193,10 @@ export async function removeProject(projectId: string, project: Project): Promis
     const config = await loadProjectsConfig();
 
     // Remove from configuration
-    config.projects = config.projects.filter(p => generateProjectId(p.gitUrl) !== projectId);
+    config.projects = config.projects.filter(p => {
+        const branch = p.branch || 'main';
+        return generateProjectId(p.gitUrl, branch) !== projectId;
+    });
     await saveProjectsConfig(config);
 
     // Optionally delete the cloned directory (commented out for safety)
