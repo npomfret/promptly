@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import express, { NextFunction, Request, Response } from 'express';
 import session from 'express-session';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs';
+import MarkdownIt from 'markdown-it';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
@@ -34,6 +35,15 @@ dotenv.config();
 // Get directory name in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+// Configure markdown-it with security and quality settings
+const md = new MarkdownIt({
+    html: false, // Disable raw HTML for security
+    xhtmlOut: true, // Use XHTML-style tags
+    breaks: true, // Convert line breaks to <br>
+    linkify: true, // Auto-convert URLs to links
+    typographer: true, // Enable smartquotes and other typographic replacements
+});
 
 // Load system prompt from file and inject variables
 function loadSystemPrompt(projectDir: string): string {
@@ -464,7 +474,7 @@ function generateProjectsTable(): string {
       <td colspan="5">
         <div class="prompt-container">
           <h3>System Prompt</h3>
-          <pre class="prompt-content">${escapeHtml(systemPrompt)}</pre>
+          <div class="prompt-content markdown-content">${renderMarkdown(systemPrompt)}</div>
         </div>
       </td>
     </tr>
@@ -491,20 +501,27 @@ function generateProjectsTable(): string {
 }
 
 /**
- * Helper function to generate HTML messages
+ * Helper function to generate HTML messages with markdown rendering
  */
 function generateMessageHTML(role: 'user' | 'model', message: string, timestamp: Date, sessionId?: string): string {
     const sessionInfo = sessionId ? ` <span style="opacity: 0.5;">• ${sessionId.substring(0, 8)}</span>` : '';
     return `
     <div class="message ${role}">
-      <div class="message-content">${escapeHtml(message)}</div>
+      <div class="message-content">${md.render(message)}</div>
       <div class="message-time">${new Date(timestamp).toLocaleTimeString()}${sessionInfo}</div>
     </div>
   `;
 }
 
 /**
- * Escape HTML to prevent XSS
+ * Render markdown content to HTML (for system prompts and other content)
+ */
+function renderMarkdown(text: string): string {
+    return md.render(text);
+}
+
+/**
+ * Escape HTML to prevent XSS (kept for backwards compatibility if needed)
  */
 function escapeHtml(text: string): string {
     return text
@@ -630,7 +647,7 @@ app.get('/project/:projectId', (req: Request, res: Response) => {
         .replace(/\{\{PROJECT_ID\}\}/g, project.id)
         .replace(/\{\{PROJECT_BRANCH\}\}/g, project.branch)
         .replace(/\{\{MESSAGES\}\}/g, messagesHTML)
-        .replace(/\{\{SYSTEM_PROMPT\}\}/g, escapeHtml(systemPrompt)); // This is already templated by loadSystemPrompt
+        .replace(/\{\{SYSTEM_PROMPT\}\}/g, renderMarkdown(systemPrompt)); // Render markdown for system prompt
 
     res.send(chatHTML);
 });
