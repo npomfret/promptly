@@ -317,6 +317,45 @@ async function refreshCacheIfStale(project: Project): Promise<boolean> {
 }
 
 /**
+ * Check if error is a cache expiration error
+ */
+function isCacheExpiredError(error: any): boolean {
+    return (
+        error?.status === 403
+        && (error?.message?.includes('CachedContent not found')
+            || error?.message?.includes('permission denied'))
+    );
+}
+
+/**
+ * Handle cache expiration by recreating the cache and clearing affected sessions
+ */
+async function handleCacheExpiration(projectId: string): Promise<void> {
+    const project = projects.get(projectId);
+    if (!project) {
+        throw new Error(`Project not found: ${projectId}`);
+    }
+
+    console.log(`[!] Cache expired for project ${projectId}, recreating...`);
+
+    // Create new cached content
+    const newCache = await createCachedContent(project);
+    project.cachedContent = newCache;
+    project.cacheStale = false;
+
+    // Clear all chat sessions for this project (they reference the old cache)
+    let clearedCount = 0;
+    for (const [key] of chatSessions.entries()) {
+        if (key.endsWith(`:${projectId}`)) {
+            chatSessions.delete(key);
+            clearedCount++;
+        }
+    }
+
+    console.log(`[✓] Cache recreated for project ${projectId}, cleared ${clearedCount} session(s)`);
+}
+
+/**
  * Get or create a chat session for the given session ID and project ID
  */
 async function getChatSession(sessionId: string, projectId: string): Promise<SessionData> {
@@ -748,8 +787,26 @@ app.post('/api/chat-message', async (req: Request, res: Response) => {
         console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
 
         // Send processed message and get response
-        const result = await sessionData.chat.sendMessage(processedMessage);
-        const response = result.response.text();
+        let result;
+        let response;
+        try {
+            result = await sessionData.chat.sendMessage(processedMessage);
+            response = result.response.text();
+        } catch (error) {
+            // Check if this is a cache expiration error
+            if (isCacheExpiredError(error)) {
+                console.log(`[!] Cache expired, recovering...`);
+                // Handle cache expiration and retry
+                await handleCacheExpiration(projectId);
+                // Get new session with fresh cache
+                const newSessionData = await getChatSession(sessionId, projectId);
+                result = await newSessionData.chat.sendMessage(processedMessage);
+                response = result.response.text();
+            } else {
+                // Re-throw if it's not a cache expiration error
+                throw error;
+            }
+        }
 
         console.log(`[${new Date().toISOString()}] Response:`);
         console.log(response);
@@ -1044,8 +1101,26 @@ app.post('/enhance', async (req: Request<{}, ChatResponse | ErrorResponse, ChatR
         console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
 
         // Send processed message and get response
-        const result = await sessionData.chat.sendMessage(processedMessage);
-        const response = result.response.text();
+        let result;
+        let response;
+        try {
+            result = await sessionData.chat.sendMessage(processedMessage);
+            response = result.response.text();
+        } catch (error) {
+            // Check if this is a cache expiration error
+            if (isCacheExpiredError(error)) {
+                console.log(`[!] Cache expired, recovering...`);
+                // Handle cache expiration and retry
+                await handleCacheExpiration(projectId);
+                // Get new session with fresh cache
+                const newSessionData = await getChatSession(sessionId, projectId);
+                result = await newSessionData.chat.sendMessage(processedMessage);
+                response = result.response.text();
+            } else {
+                // Re-throw if it's not a cache expiration error
+                throw error;
+            }
+        }
 
         console.log(`[${new Date().toISOString()}] Response:`);
         console.log(response);
