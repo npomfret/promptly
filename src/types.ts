@@ -27,6 +27,7 @@ export interface ProjectsConfigFile {
 
 export interface SessionData {
     projectId: string;
+    mode: 'enhance' | 'ask';
     chat: ChatSession;
     history: ChatMessage[];
     createdAt: Date;

@@ -45,9 +45,14 @@ const md = new MarkdownIt({
     typographer: true, // Enable smartquotes and other typographic replacements
 });
 
+// Mode type for different prompt types
+type PromptMode = 'enhance' | 'ask';
+
 // Load system prompt from file and inject variables
-function loadSystemPrompt(projectDir: string): string {
-    const systemPromptPath = join(__dirname, '..', 'prompts', 'system-prompt.md');
+function loadSystemPromptForMode(projectDir: string, mode: PromptMode = 'enhance'): string {
+    // Determine which prompt file to load based on mode
+    const promptFileName = mode === 'ask' ? 'ask-prompt.md' : 'system-prompt.md';
+    const systemPromptPath = join(__dirname, '..', 'prompts', promptFileName);
 
     let content = '';
 
@@ -55,10 +60,10 @@ function loadSystemPrompt(projectDir: string): string {
         try {
             content = readFileSync(systemPromptPath, 'utf-8').trim();
             if (content) {
-                console.log(`[✓] Loaded system prompt from: ${systemPromptPath}`);
+                console.log(`[✓] Loaded ${mode} prompt from: ${systemPromptPath}`);
             }
         } catch (error) {
-            console.warn(`[!] Failed to read system prompt file: ${error}`);
+            console.warn(`[!] Failed to read ${mode} prompt file: ${error}`);
         }
     }
 
@@ -66,9 +71,9 @@ function loadSystemPrompt(projectDir: string): string {
     if (!content) {
         content = process.env.SYSTEM_PROMPT || 'You are a helpful AI assistant.';
         if (process.env.SYSTEM_PROMPT) {
-            console.log('[✓] Using system prompt from SYSTEM_PROMPT environment variable');
+            console.log(`[✓] Using ${mode} prompt from SYSTEM_PROMPT environment variable`);
         } else {
-            console.log('[!] Using default system prompt (create system-prompt.md to customize)');
+            console.log(`[!] Using default ${mode} prompt (create ${promptFileName} to customize)`);
         }
     }
 
@@ -99,6 +104,11 @@ function loadSystemPrompt(projectDir: string): string {
     }
 
     return injectedPrompt;
+}
+
+// Backward compatibility wrapper
+function loadSystemPrompt(projectDir: string): string {
+    return loadSystemPromptForMode(projectDir, 'enhance');
 }
 
 /**
@@ -317,6 +327,13 @@ async function refreshCacheIfStale(project: Project): Promise<boolean> {
 }
 
 /**
+ * Process user message - strip leading and trailing underscores
+ */
+function processUserMessage(message: string): string {
+    return message.replace(/^_+|_+$/g, '');
+}
+
+/**
  * Check if error is a cache expiration error
  */
 function isCacheExpiredError(error: any): boolean {
@@ -356,10 +373,39 @@ async function handleCacheExpiration(projectId: string): Promise<void> {
 }
 
 /**
- * Get or create a chat session for the given session ID and project ID
+ * Send message with automatic cache expiration retry
  */
-async function getChatSession(sessionId: string, projectId: string): Promise<SessionData> {
-    const compositeKey = `${sessionId}:${projectId}`;
+async function sendMessageWithRetry(
+    sessionData: SessionData,
+    message: string,
+    projectId: string,
+    sessionId: string,
+): Promise<string> {
+    try {
+        const result = await sessionData.chat.sendMessage(message);
+        return result.response.text();
+    } catch (error) {
+        // Check if this is a cache expiration error
+        if (isCacheExpiredError(error)) {
+            console.log(`[!] Cache expired, recovering...`);
+            // Handle cache expiration and retry
+            await handleCacheExpiration(projectId);
+            // Get new session with fresh cache
+            const newSessionData = await getChatSession(sessionId, projectId, sessionData.mode);
+            const result = await newSessionData.chat.sendMessage(message);
+            return result.response.text();
+        } else {
+            // Re-throw if it's not a cache expiration error
+            throw error;
+        }
+    }
+}
+
+/**
+ * Get or create a chat session for the given session ID, project ID, and mode
+ */
+async function getChatSession(sessionId: string, projectId: string, mode: PromptMode = 'enhance'): Promise<SessionData> {
+    const compositeKey = `${sessionId}:${projectId}:${mode}`;
 
     // Get project
     const project = projects.get(projectId);
@@ -377,7 +423,13 @@ async function getChatSession(sessionId: string, projectId: string): Promise<Ses
         }
 
         console.log(`[${new Date().toISOString()}] Using cached model for session: ${compositeKey}`);
-        const model = genAI.getGenerativeModelFromCachedContent(project.cachedContent);
+
+        // Load mode-specific system instruction
+        const systemInstruction = loadSystemPromptForMode(project.path, mode);
+
+        const model = genAI.getGenerativeModelFromCachedContent(project.cachedContent, {
+            systemInstruction,
+        });
 
         const chat = model.startChat({
             history: [],
@@ -385,6 +437,7 @@ async function getChatSession(sessionId: string, projectId: string): Promise<Ses
 
         const sessionData: SessionData = {
             projectId,
+            mode,
             chat,
             history: [],
             createdAt: new Date(),
@@ -392,7 +445,7 @@ async function getChatSession(sessionId: string, projectId: string): Promise<Ses
         };
 
         chatSessions.set(compositeKey, sessionData);
-        console.log(`[${new Date().toISOString()}] Created new chat session: ${compositeKey}`);
+        console.log(`[${new Date().toISOString()}] Created new ${mode} chat session: ${compositeKey}`);
     }
 
     const sessionData = chatSessions.get(compositeKey)!;
@@ -425,6 +478,7 @@ function writeHistoryEntry(data: {
     response: string;
     messageCount: number;
     cachedContentName?: string;
+    mode?: 'enhance' | 'ask';
 }): void {
     if (!HISTORY_DIR) {
         return; // History logging is disabled
@@ -449,6 +503,7 @@ function writeHistoryEntry(data: {
         const historyEntry = {
             sessionId: data.sessionId,
             projectId: data.projectId,
+            mode: data.mode || 'enhance',
             timestamp: data.timestamp.toISOString(),
             messageCount: data.messageCount,
             cachedContentName: data.cachedContentName,
@@ -494,6 +549,14 @@ function generateProjectsTable(): string {
       <td>${p.branch}</td>
       <td class="text-muted">${new Date(p.lastUpdated).toLocaleString()}</td>
       <td class="actions">
+        <a href="/project/${p.id}" class="btn btn-primary btn-small">
+          <i data-lucide="message-circle" class="icon"></i>
+          Enhance
+        </a>
+        <a href="/ask/${p.id}" class="btn btn-success btn-small">
+          <i data-lucide="help-circle" class="icon"></i>
+          Ask
+        </a>
         <button class="btn btn-secondary btn-small"
                 onclick="togglePrompt('${promptId}')">
           <i data-lucide="file-text" class="icon"></i>
@@ -692,6 +755,111 @@ app.get('/project/:projectId', (req: Request, res: Response) => {
 });
 
 /**
+ * Serve the ask page for a specific project
+ */
+app.get('/ask/:projectId', (req: Request, res: Response) => {
+    const { projectId } = req.params;
+    const project = projects.get(projectId);
+
+    if (!project) {
+        return res.status(404).send(`
+      <html>
+        <head><title>Project Not Found</title></head>
+        <body>
+          <h1>Project Not Found</h1>
+          <p>Project ID: ${projectId}</p>
+          <a href="/">Back to Projects</a>
+        </body>
+      </html>
+    `);
+    }
+
+    // Get ask history from HISTORY_DIR if available
+    let messagesHTML = '<p class="text-muted">No messages yet. Start the conversation below.</p>';
+
+    if (HISTORY_DIR) {
+        try {
+            const projectHistoryDir = join(HISTORY_DIR, projectId);
+
+            if (existsSync(projectHistoryDir)) {
+                // Read all history files, sorted by timestamp (oldest first)
+                const files = execSync(`ls "${projectHistoryDir}"/*.json 2>/dev/null | sort || true`, {
+                    encoding: 'utf-8',
+                    maxBuffer: 10 * 1024 * 1024,
+                })
+                    .trim()
+                    .split('\n')
+                    .filter(f => f);
+
+                if (files.length > 0) {
+                    const historyEntries: Array<{
+                        timestamp: Date;
+                        request: string;
+                        response: string;
+                    }> = [];
+
+                    for (const file of files) {
+                        try {
+                            const content = readFileSync(file, 'utf-8');
+                            const entry = JSON.parse(content);
+                            historyEntries.push({
+                                timestamp: new Date(entry.timestamp),
+                                request: entry.request,
+                                response: entry.response,
+                            });
+                        } catch (error) {
+                            console.error(`[ERROR] Failed to read history file ${file}:`, error);
+                        }
+                    }
+
+                    // Sort by timestamp (oldest first)
+                    historyEntries.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+                    // Generate HTML
+                    messagesHTML = historyEntries
+                        .map(entry => {
+                            const userHTML = generateMessageHTML('user', entry.request, entry.timestamp);
+                            const modelHTML = generateMessageHTML('model', entry.response, entry.timestamp);
+                            return userHTML + modelHTML;
+                        })
+                        .join('');
+                }
+            }
+        } catch (error) {
+            console.error('[ERROR] Failed to load project history:', error);
+        }
+    }
+
+    // If no saved history, check current session
+    if (messagesHTML === '<p class="text-muted">No messages yet. Start the conversation below.</p>') {
+        const sessionId = req.session.id;
+        const compositeKey = `${sessionId}:${projectId}:ask`;
+        const sessionData = chatSessions.get(compositeKey);
+
+        if (sessionData && sessionData.history.length > 0) {
+            messagesHTML = sessionData.history.map(msg => generateMessageHTML(msg.role, msg.message, msg.timestamp, sessionId)).join('');
+        }
+    }
+
+    // Load system prompt for this project (with PROJECT_DIR substituted - this is what Gemini sees)
+    const systemPrompt = loadSystemPromptForMode(project.path, 'ask');
+
+    // Load and populate ask template
+    const askPath = join(__dirname, '..', 'views', 'ask.html');
+    let askHTML = readFileSync(askPath, 'utf-8');
+
+    askHTML = askHTML
+        .replace(/\{\{PROJECT_NAME\}\}/g, project.gitUrl.split('/').pop()?.replace('.git', '') || project.id)
+        .replace(/\{\{GIT_URL\}\}/g, project.gitUrl)
+        .replace(/\{\{PROJECT_ID\}\}/g, project.id)
+        .replace(/\{\{PROJECT_BRANCH\}\}/g, project.branch)
+        .replace(/\{\{MESSAGES\}\}/g, messagesHTML)
+        .replace(/\{\{SYSTEM_PROMPT\}\}/g, renderMarkdown(systemPrompt)); // Render markdown for system prompt
+
+    res.send(askHTML);
+});
+
+/**
  * HTMX: Get projects table HTML
  */
 app.get('/api/projects-table', (_req: Request, res: Response) => {
@@ -774,39 +942,19 @@ app.post('/api/chat-message', async (req: Request, res: Response) => {
             return res.status(400).send('<p class="error">Message is required</p>');
         }
 
-        // Strip all leading and trailing underscores
-        let processedMessage = message.replace(/^_+|_+$/g, '');
+        const processedMessage = processUserMessage(message);
 
         const sessionId = req.session.id;
-        const sessionData = await getChatSession(sessionId, projectId);
+        const sessionData = await getChatSession(sessionId, projectId, 'enhance');
 
         console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
-        console.log(`[${new Date().toISOString()}] Session: ${sessionId}:${projectId}`);
+        console.log(`[${new Date().toISOString()}] Session: ${sessionId}:${projectId}:enhance`);
         console.log(`[${new Date().toISOString()}] Prompt:`);
         console.log(processedMessage);
         console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
 
         // Send processed message and get response
-        let result;
-        let response;
-        try {
-            result = await sessionData.chat.sendMessage(processedMessage);
-            response = result.response.text();
-        } catch (error) {
-            // Check if this is a cache expiration error
-            if (isCacheExpiredError(error)) {
-                console.log(`[!] Cache expired, recovering...`);
-                // Handle cache expiration and retry
-                await handleCacheExpiration(projectId);
-                // Get new session with fresh cache
-                const newSessionData = await getChatSession(sessionId, projectId);
-                result = await newSessionData.chat.sendMessage(processedMessage);
-                response = result.response.text();
-            } else {
-                // Re-throw if it's not a cache expiration error
-                throw error;
-            }
-        }
+        const response = await sendMessageWithRetry(sessionData, processedMessage, projectId, sessionId);
 
         console.log(`[${new Date().toISOString()}] Response:`);
         console.log(response);
@@ -829,6 +977,7 @@ app.post('/api/chat-message', async (req: Request, res: Response) => {
             response,
             messageCount: sessionData.history.length,
             cachedContentName: project?.cachedContent?.name,
+            mode: 'enhance',
         });
 
         // Return HTML for both messages (showing processed message)
@@ -838,6 +987,70 @@ app.post('/api/chat-message', async (req: Request, res: Response) => {
         res.send(userHTML + modelHTML);
     } catch (error) {
         console.error('[ERROR] Failed to process chat:', error);
+        res.status(500).send(`<p class="error">Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}</p>`);
+    }
+});
+
+/**
+ * HTMX: Send ask message and return new message HTML
+ */
+app.post('/api/ask-message', async (req: Request, res: Response) => {
+    try {
+        const { message, projectId } = req.body;
+
+        if (!projectId) {
+            return res.status(400).send('<p class="error">Project ID is required</p>');
+        }
+
+        if (!message || typeof message !== 'string') {
+            return res.status(400).send('<p class="error">Message is required</p>');
+        }
+
+        const processedMessage = processUserMessage(message);
+
+        const sessionId = req.session.id;
+        const sessionData = await getChatSession(sessionId, projectId, 'ask');
+
+        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
+        console.log(`[${new Date().toISOString()}] Session: ${sessionId}:${projectId}:ask`);
+        console.log(`[${new Date().toISOString()}] Question:`);
+        console.log(processedMessage);
+        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
+
+        // Send processed message and get response
+        const response = await sendMessageWithRetry(sessionData, processedMessage, projectId, sessionId);
+
+        console.log(`[${new Date().toISOString()}] Response:`);
+        console.log(response);
+        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════\n`);
+
+        // Store in history (using processed message)
+        const timestamp = new Date();
+        const userMessage = { role: 'user' as const, message: processedMessage, timestamp };
+        const modelMessage = { role: 'model' as const, message: response, timestamp };
+
+        sessionData.history.push(userMessage, modelMessage);
+
+        // Write to history file if configured
+        const project = projects.get(projectId);
+        writeHistoryEntry({
+            sessionId,
+            projectId,
+            timestamp,
+            request: processedMessage,
+            response,
+            messageCount: sessionData.history.length,
+            cachedContentName: project?.cachedContent?.name,
+            mode: 'ask',
+        });
+
+        // Return HTML for both messages (showing processed message)
+        const userHTML = generateMessageHTML('user', processedMessage, timestamp, sessionId);
+        const modelHTML = generateMessageHTML('model', response, timestamp, sessionId);
+
+        res.send(userHTML + modelHTML);
+    } catch (error) {
+        console.error('[ERROR] Failed to process ask:', error);
         res.status(500).send(`<p class="error">Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}</p>`);
     }
 });
@@ -925,16 +1138,29 @@ app.get('/api/project-history', (req: Request, res: Response) => {
 app.post('/api/session/clear', (req: Request, res: Response) => {
     const sessionId = req.session.id;
     const projectId = req.query.projectId as string;
+    const mode = req.query.mode as string;
 
     if (!projectId) {
         return res.status(400).send('<p class="error">Project ID is required</p>');
     }
 
-    const compositeKey = `${sessionId}:${projectId}`;
-
-    if (chatSessions.has(compositeKey)) {
-        chatSessions.delete(compositeKey);
-        console.log(`[${new Date().toISOString()}] Cleared chat session: ${compositeKey}`);
+    // If mode is specified, clear only that mode's session
+    // If mode is not specified, clear all sessions for this project
+    if (mode === 'enhance' || mode === 'ask') {
+        const compositeKey = `${sessionId}:${projectId}:${mode}`;
+        if (chatSessions.has(compositeKey)) {
+            chatSessions.delete(compositeKey);
+            console.log(`[${new Date().toISOString()}] Cleared ${mode} session: ${compositeKey}`);
+        }
+    } else {
+        // Clear both enhance and ask sessions
+        for (const modeType of ['enhance', 'ask'] as const) {
+            const compositeKey = `${sessionId}:${projectId}:${modeType}`;
+            if (chatSessions.has(compositeKey)) {
+                chatSessions.delete(compositeKey);
+                console.log(`[${new Date().toISOString()}] Cleared ${modeType} session: ${compositeKey}`);
+            }
+        }
     }
 
     res.send('<p class="text-muted">Session cleared. Start a new conversation below.</p>');
@@ -961,6 +1187,7 @@ app.get('/health', (_req: Request, res: Response<HealthResponse>) => {
 app.get('/session', (req: Request, res: Response<SessionInfoResponse | ErrorResponse>) => {
     const sessionId = req.session.id;
     const projectId = req.query.projectId as string;
+    const mode = (req.query.mode as 'enhance' | 'ask') || 'enhance';
 
     if (!projectId) {
         return res.status(400).json({
@@ -968,7 +1195,7 @@ app.get('/session', (req: Request, res: Response<SessionInfoResponse | ErrorResp
         });
     }
 
-    const compositeKey = `${sessionId}:${projectId}`;
+    const compositeKey = `${sessionId}:${projectId}:${mode}`;
     const sessionData = chatSessions.get(compositeKey);
 
     res.json({
@@ -986,6 +1213,7 @@ app.get('/session', (req: Request, res: Response<SessionInfoResponse | ErrorResp
 app.post('/session/clear', (req: Request, res: Response<ClearSessionResponse | ErrorResponse>) => {
     const sessionId = req.session.id;
     const projectId = req.query.projectId as string;
+    const mode = req.query.mode as string;
 
     if (!projectId) {
         return res.status(400).json({
@@ -993,16 +1221,31 @@ app.post('/session/clear', (req: Request, res: Response<ClearSessionResponse | E
         });
     }
 
-    const compositeKey = `${sessionId}:${projectId}`;
-
-    if (chatSessions.has(compositeKey)) {
-        chatSessions.delete(compositeKey);
-        console.log(`[${new Date().toISOString()}] Cleared chat session: ${compositeKey}`);
+    // If mode is specified, clear only that mode's session
+    // If mode is not specified, clear all sessions for this project
+    let clearedCount = 0;
+    if (mode === 'enhance' || mode === 'ask') {
+        const compositeKey = `${sessionId}:${projectId}:${mode}`;
+        if (chatSessions.has(compositeKey)) {
+            chatSessions.delete(compositeKey);
+            console.log(`[${new Date().toISOString()}] Cleared ${mode} session: ${compositeKey}`);
+            clearedCount = 1;
+        }
+    } else {
+        // Clear both enhance and ask sessions
+        for (const modeType of ['enhance', 'ask'] as const) {
+            const compositeKey = `${sessionId}:${projectId}:${modeType}`;
+            if (chatSessions.has(compositeKey)) {
+                chatSessions.delete(compositeKey);
+                console.log(`[${new Date().toISOString()}] Cleared ${modeType} session: ${compositeKey}`);
+                clearedCount++;
+            }
+        }
     }
 
     res.json({
         success: true,
-        message: 'Session cleared',
+        message: `Session${clearedCount === 1 ? '' : 's'} cleared`,
         sessionId,
     });
 });
@@ -1077,11 +1320,10 @@ app.post('/enhance', async (req: Request<{}, ChatResponse | ErrorResponse, ChatR
             });
         }
 
-        // Strip all leading and trailing underscores
-        let processedMessage = message.replace(/^_+|_+$/g, '');
+        const processedMessage = processUserMessage(message);
 
         const sessionId = req.session.id;
-        const sessionData = await getChatSession(sessionId, projectId);
+        const sessionData = await getChatSession(sessionId, projectId, 'enhance');
 
         /*
         message looks like this:
@@ -1095,32 +1337,13 @@ app.post('/enhance', async (req: Request<{}, ChatResponse | ErrorResponse, ChatR
         }
          */
         console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
-        console.log(`[${new Date().toISOString()}] Session: ${sessionId}:${projectId}`);
+        console.log(`[${new Date().toISOString()}] Session: ${sessionId}:${projectId}:enhance`);
         console.log(`[${new Date().toISOString()}] Input Message:`);
         console.log(processedMessage);
         console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
 
         // Send processed message and get response
-        let result;
-        let response;
-        try {
-            result = await sessionData.chat.sendMessage(processedMessage);
-            response = result.response.text();
-        } catch (error) {
-            // Check if this is a cache expiration error
-            if (isCacheExpiredError(error)) {
-                console.log(`[!] Cache expired, recovering...`);
-                // Handle cache expiration and retry
-                await handleCacheExpiration(projectId);
-                // Get new session with fresh cache
-                const newSessionData = await getChatSession(sessionId, projectId);
-                result = await newSessionData.chat.sendMessage(processedMessage);
-                response = result.response.text();
-            } else {
-                // Re-throw if it's not a cache expiration error
-                throw error;
-            }
-        }
+        const response = await sendMessageWithRetry(sessionData, processedMessage, projectId, sessionId);
 
         console.log(`[${new Date().toISOString()}] Response:`);
         console.log(response);
@@ -1151,6 +1374,7 @@ app.post('/enhance', async (req: Request<{}, ChatResponse | ErrorResponse, ChatR
             response,
             messageCount: sessionData.history.length,
             cachedContentName: project?.cachedContent?.name,
+            mode: 'enhance',
         });
 
         res.json({
@@ -1169,11 +1393,93 @@ app.post('/enhance', async (req: Request<{}, ChatResponse | ErrorResponse, ChatR
 });
 
 /**
+ * Ask endpoint - send question to critical thinking AI
+ */
+app.post('/ask', async (req: Request<{}, ChatResponse | ErrorResponse, ChatRequest>, res: Response<ChatResponse | ErrorResponse>) => {
+    try {
+        const { message } = req.body;
+        const projectId = req.query.projectId as string;
+
+        if (!projectId) {
+            return res.status(400).json({
+                error: 'projectId query parameter is required',
+            });
+        }
+
+        if (!message || typeof message !== 'string') {
+            return res.status(400).json({
+                error: 'Message is required and must be a string',
+            });
+        }
+
+        const processedMessage = processUserMessage(message);
+
+        const sessionId = req.session.id;
+        const sessionData = await getChatSession(sessionId, projectId, 'ask');
+
+        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
+        console.log(`[${new Date().toISOString()}] Session: ${sessionId}:${projectId}:ask`);
+        console.log(`[${new Date().toISOString()}] Input Message:`);
+        console.log(processedMessage);
+        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
+
+        // Send processed message and get response
+        const response = await sendMessageWithRetry(sessionData, processedMessage, projectId, sessionId);
+
+        console.log(`[${new Date().toISOString()}] Response:`);
+        console.log(response);
+        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════\n`);
+
+        // Store in history (using processed message)
+        const timestamp = new Date();
+        sessionData.history.push(
+            {
+                role: 'user',
+                message: processedMessage,
+                timestamp,
+            },
+            {
+                role: 'model',
+                message: response,
+                timestamp,
+            },
+        );
+
+        // Write to history file if configured
+        const project = projects.get(projectId);
+        writeHistoryEntry({
+            sessionId,
+            projectId,
+            timestamp,
+            request: processedMessage,
+            response,
+            messageCount: sessionData.history.length,
+            cachedContentName: project?.cachedContent?.name,
+            mode: 'ask',
+        });
+
+        res.json({
+            success: true,
+            sessionId,
+            projectId,
+            response,
+        });
+    } catch (error) {
+        console.error('[ERROR] Failed to process ask:', error);
+        res.status(500).json({
+            error: 'Failed to process message',
+            details: error instanceof Error ? error.message : 'Unknown error',
+        });
+    }
+});
+
+/**
  * Get chat history for current session
  */
 app.get('/history', (req: Request, res: Response<HistoryResponse | ErrorResponse>) => {
     const sessionId = req.session.id;
     const projectId = req.query.projectId as string;
+    const mode = (req.query.mode as 'enhance' | 'ask') || 'enhance';
 
     if (!projectId) {
         return res.status(400).json({
@@ -1181,7 +1487,7 @@ app.get('/history', (req: Request, res: Response<HistoryResponse | ErrorResponse
         });
     }
 
-    const compositeKey = `${sessionId}:${projectId}`;
+    const compositeKey = `${sessionId}:${projectId}:${mode}`;
     const sessionData = chatSessions.get(compositeKey);
 
     if (!sessionData) {
