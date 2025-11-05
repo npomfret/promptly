@@ -337,11 +337,15 @@ function processUserMessage(message: string): string {
  * Check if error is a cache expiration error
  */
 function isCacheExpiredError(error: any): boolean {
-    return (
-        error?.status === 403
-        && (error?.message?.includes('CachedContent not found')
-            || error?.message?.includes('permission denied'))
-    );
+    // Convert error to string to catch message in any property
+    const errorString = String(error);
+    const statusMatch = error?.status === 403;
+    const messageMatch = errorString.includes('CachedContent not found')
+        || errorString.includes('permission denied')
+        || error?.message?.includes('CachedContent not found')
+        || error?.message?.includes('permission denied');
+
+    return statusMatch && messageMatch;
 }
 
 /**
