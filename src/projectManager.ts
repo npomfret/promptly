@@ -133,6 +133,7 @@ export async function initializeProjects(checkoutDir: string): Promise<Map<strin
             branch,
             path: projectPath,
             lastUpdated: new Date(),
+            status: 'ready',  // Existing projects that loaded successfully are ready
         };
 
         projects.set(projectId, project);
@@ -166,21 +167,29 @@ export async function addProject(
         throw new Error(`Project with git URL ${gitUrl} and branch ${branch} already exists`);
     }
 
-    // Clone repository
-    await cloneRepository(gitUrl, projectPath, branch);
-
-    // Add to configuration
+    // Add to configuration FIRST (before cloning)
     config.projects.push({ gitUrl, branch });
     await saveProjectsConfig(config);
 
-    // Create and return project object
+    // Create project object with cloning status
     const project: Project = {
         id: projectId,
         gitUrl,
         branch,
         path: projectPath,
         lastUpdated: new Date(),
+        status: 'cloning',
     };
+
+    // Try to clone repository (don't throw error, just update status)
+    try {
+        await cloneRepository(gitUrl, projectPath, branch);
+        project.status = 'ready';
+    } catch (error) {
+        console.error(`[ERROR] Failed to clone project ${projectId}:`, error);
+        project.status = 'error';
+        project.errorMessage = error instanceof Error ? error.message : 'Unknown error during clone';
+    }
 
     return project;
 }

@@ -540,6 +540,10 @@ function redactGitUrl(gitUrl: string): string {
             // Replace username (token) with asterisks
             url.username = '***';
         }
+        // Clear password if present (shouldn't be for modern PATs)
+        if (url.password) {
+            url.password = '';
+        }
         return url.toString();
     } catch {
         // If not a valid URL, return as-is
@@ -563,18 +567,32 @@ function generateProjectsTable(): string {
             const promptPreview = systemPrompt.substring(0, 100) + (systemPrompt.length > 100 ? '...' : '');
             const promptId = `prompt-${p.id}`;
 
+            // Generate status badge
+            let statusBadge = '';
+            if (p.status === 'cloning') {
+                statusBadge = '<span class="status-badge status-cloning">Cloning...</span>';
+            } else if (p.status === 'error') {
+                statusBadge = `<span class="status-badge status-error" title="${p.errorMessage || 'Unknown error'}">Error</span>`;
+            } else {
+                statusBadge = '<span class="status-badge status-ready">Ready</span>';
+            }
+
+            // Disable buttons if not ready
+            const disabledClass = p.status !== 'ready' ? 'disabled' : '';
+            const disabledAttr = p.status !== 'ready' ? 'disabled' : '';
+
             return `
     <tr class="project-item">
-      <td><a href="/project/${p.id}">${p.id}</a></td>
+      <td><a href="/project/${p.id}">${p.id}</a> ${statusBadge}</td>
       <td>${redactGitUrl(p.gitUrl)}</td>
       <td>${p.branch}</td>
       <td class="text-muted">${new Date(p.lastUpdated).toLocaleString()}</td>
       <td class="actions">
-        <a href="/project/${p.id}" class="btn btn-primary btn-small">
+        <a href="/project/${p.id}" class="btn btn-primary btn-small ${disabledClass}" ${disabledAttr}>
           <i data-lucide="message-circle" class="icon"></i>
           Enhance
         </a>
-        <a href="/ask/${p.id}" class="btn btn-primary btn-small">
+        <a href="/ask/${p.id}" class="btn btn-primary btn-small ${disabledClass}" ${disabledAttr}>
           <i data-lucide="help-circle" class="icon"></i>
           Ask
         </a>
@@ -903,9 +921,10 @@ app.post('/api/projects', async (req: Request, res: Response) => {
         if (accessToken && accessToken.trim()) {
             try {
                 const url = new URL(gitUrl);
-                // Embed token as: https://token@github.com/user/repo.git
-                url.username = accessToken.trim();
-                url.password = ''; // GitHub doesn't use password with PAT
+                // For GitHub fine-grained PAT: use 'oauth2' as username and token as password
+                // Format: https://oauth2:TOKEN@github.com/user/repo.git
+                url.username = 'oauth2';
+                url.password = accessToken.trim();
                 finalGitUrl = url.toString();
                 console.log(`[DEBUG] Embedded token in URL. Original: ${gitUrl}, Final: ${finalGitUrl.replace(accessToken.trim(), 'REDACTED')}`);
             } catch (error) {

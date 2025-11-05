@@ -894,3 +894,36 @@ html {
 .prompt-viewer .prompt-content {
   max-height: none;
 }
+
+/* Status badges */
+.status-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  margin-left: 0.5rem;
+}
+
+.status-ready {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.status-cloning {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.status-error {
+  background: #fee2e2;
+  color: #991b1b;
+  cursor: help;
+}
+
+.btn.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}

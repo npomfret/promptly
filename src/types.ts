@@ -14,6 +14,8 @@ export interface Project {
     cachedContent?: CachedContent;
     cacheStale?: boolean;
     lastUpdated: Date;
+    status?: 'cloning' | 'ready' | 'error';
+    errorMessage?: string;
 }
 
 export interface ProjectConfig {
