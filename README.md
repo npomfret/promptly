@@ -1,6 +1,25 @@
-# Gemini Session Server
+# Promptly - Gemini Session Server
 
 A modern TypeScript web server that provides long-lived chat sessions with Google's Gemini AI. Built with Express and full type safety.
+
+## Quick Start (Docker Deployment)
+
+**Deploy to your server in one command:**
+
+```bash
+./deploy.sh
+```
+
+**Manage your deployment:**
+
+```bash
+./scripts/status.sh      # Check application status
+./scripts/logs.sh        # View live logs
+./scripts/restart.sh     # Restart application
+./scripts/rebuild.sh     # Rebuild and redeploy
+```
+
+See [Deployment Management](#deployment-management) for all available commands.
 
 ## Features
 
@@ -548,6 +567,198 @@ npm start
 
 - Make sure you're including cookies in your requests (`credentials: 'include'` in fetch)
 - Sessions are in-memory and will be lost on server restart
+
+## Docker Deployment
+
+This application is designed to be deployed to a cloud server using Docker.
+
+### Prerequisites
+
+- SSH access to your server
+- Docker and Docker Compose installed (automatically installed by deploy script)
+- `.env` file configured with your `GEMINI_API_KEY`
+- `projects.json` configured with your repositories
+
+### Initial Deployment
+
+1. **Configure environment:**
+   ```bash
+   cp .env.example .env
+   # Edit .env and add your GEMINI_API_KEY
+   ```
+
+2. **Configure projects:**
+   ```bash
+   cp projects.json.example projects.json
+   # Edit projects.json to add your Git repositories
+   ```
+
+3. **Deploy:**
+   ```bash
+   ./deploy.sh
+   ```
+
+The deployment script will:
+- Test SSH connection
+- Install Docker and Docker Compose if needed
+- Create deployment directory (`/opt/promptly`)
+- Copy application files
+- Build Docker image
+- Start the application
+
+### Deployment Management
+
+Use these convenience scripts to manage your deployment:
+
+#### View Application Status
+```bash
+./scripts/status.sh
+```
+Shows container status, health check, and recent logs.
+
+#### View Live Logs
+```bash
+./scripts/logs.sh
+```
+Streams application logs in real-time. Press Ctrl+C to exit.
+
+#### Restart Application
+```bash
+./scripts/restart.sh
+```
+Restarts the application container without rebuilding.
+
+#### Rebuild and Redeploy
+```bash
+./scripts/rebuild.sh
+```
+Copies updated code, rebuilds the Docker image, and restarts the application.
+
+#### Start Application
+```bash
+./scripts/start.sh
+```
+Starts the application if it's stopped.
+
+#### Stop Application
+```bash
+./scripts/stop.sh
+```
+Stops the application container.
+
+#### Access Container Shell
+```bash
+./scripts/shell.sh
+```
+Opens an interactive shell inside the running container.
+
+#### Update Environment Variables
+```bash
+# Edit .env locally, then:
+./scripts/update-env.sh
+```
+Updates the `.env` file on the server and restarts the application.
+
+#### Update Projects Configuration
+```bash
+# Edit projects.json locally, then:
+./scripts/update-projects.sh
+```
+Updates the `projects.json` file on the server and restarts the application.
+
+#### Backup Data
+```bash
+./scripts/backup.sh
+```
+Creates a timestamped backup of all data (checkouts and history) to `./backups/`.
+
+### Server Configuration
+
+**Default Configuration:**
+- Server: `root@promptly.snowmonkey.co.uk`
+- Deployment Directory: `/opt/promptly`
+- Port: 3000
+- Container Name: `promptly`
+
+**Data Persistence:**
+- Cloned repositories: `/opt/promptly/data/checkouts`
+- Chat history: `/opt/promptly/data/history`
+
+### Updating Code
+
+After making changes to your code:
+
+```bash
+# Quick restart (for config changes only)
+./scripts/restart.sh
+
+# Full rebuild (for code changes)
+./scripts/rebuild.sh
+
+# Or use the main deployment script
+./deploy.sh
+```
+
+### Monitoring
+
+Check application health:
+```bash
+# From your local machine
+curl http://promptly.snowmonkey.co.uk:3000/health
+
+# Or use the status script
+./scripts/status.sh
+```
+
+### Troubleshooting
+
+**Container won't start:**
+```bash
+./scripts/logs.sh  # Check logs for errors
+```
+
+**Application not accessible:**
+1. Check firewall: Ensure port 3000 is open in your cloud provider's firewall
+2. Check container: `./scripts/status.sh`
+3. Check logs: `./scripts/logs.sh`
+
+**Permission issues:**
+```bash
+ssh root@promptly.snowmonkey.co.uk 'chown -R 1001:1001 /opt/promptly/data'
+```
+
+### Files and Directories
+
+**Local Files:**
+- `Dockerfile` - Docker image configuration
+- `docker-compose.yml` - Container orchestration
+- `.dockerignore` - Files excluded from Docker build
+- `deploy.sh` - Main deployment script
+- `scripts/*.sh` - Deployment management scripts
+
+**Server Files:**
+- `/opt/promptly/` - Application root
+- `/opt/promptly/data/checkouts/` - Cloned Git repositories
+- `/opt/promptly/data/history/` - Chat history logs
+- `/opt/promptly/.env` - Environment variables
+- `/opt/promptly/projects.json` - Projects configuration
+
+### Advanced Configuration
+
+**Custom Server:**
+Edit `deploy.sh` and all scripts in `scripts/` to change the server hostname.
+
+**Custom Port:**
+Edit `docker-compose.yml` to change the port mapping.
+
+**SSL/TLS:**
+See `DEPLOYMENT.md` for instructions on setting up HTTPS with Nginx or Caddy.
+
+### Documentation
+
+- `DEPLOYMENT.md` - Complete deployment guide with detailed instructions
+- `DEPLOYMENT_SUMMARY.md` - Quick reference for deployment status and commands
+- `README.md` - This file
 
 ## License
 

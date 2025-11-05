@@ -1,0 +1,34 @@
+services:
+  promptly:
+    image: promptly:latest
+    container_name: promptly
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - CHECKOUT_DIR=/app/data/checkouts
+      - HISTORY_DIR=/app/data/history
+      - PORT=3000
+      - SESSION_SECRET=${SESSION_SECRET:-}
+    volumes:
+      # Persist cloned repositories
+      - ./data/checkouts:/app/data/checkouts
+      # Persist chat history
+      - ./data/history:/app/data/history
+      # Mount projects configuration
+      - ./projects.json:/app/projects.json:ro
+      # Optional: Mount custom prompts
+      - ./prompts:/app/prompts:ro
+    networks:
+      - promptly-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 40s
+
+networks:
+  promptly-network:
+    driver: bridge

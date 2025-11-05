@@ -1,8 +1,6 @@
 #!/bin/bash
+# Stop application on cloud server
 
-# Read PORT from .env file, default to 3000
-PORT=$(grep '^PORT=' .env 2>/dev/null | cut -d'=' -f2)
-PORT=${PORT:-3000}
-
-# Send shutdown request to server
-curl -s -X POST "http://localhost:$PORT/shutdown" && echo '' || echo "No server running on port $PORT"
+echo "Stopping application..."
+ssh root@promptly.snowmonkey.co.uk 'cd /opt/promptly && docker-compose down'
+echo "Application stopped."
