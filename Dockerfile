@@ -38,6 +38,8 @@ RUN npm ci --only=production && \
 # Copy application source
 COPY --chown=nodejs:nodejs src/ ./src/
 COPY --chown=nodejs:nodejs prompts/ ./prompts/
+COPY --chown=nodejs:nodejs views/ ./views/
+COPY --chown=nodejs:nodejs public/ ./public/
 COPY --chown=nodejs:nodejs tsconfig.json ./
 
 # Create directories for data with correct permissions

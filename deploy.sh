@@ -83,6 +83,8 @@ echo -e "${BLUE}[4/6]${NC} Copying application files..."
 scp -r \
     src \
     prompts \
+    views \
+    public \
     package.json \
     package-lock.json \
     tsconfig.json \

@@ -3,8 +3,8 @@ services:
     image: promptly:latest
     container_name: promptly
     restart: unless-stopped
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - CHECKOUT_DIR=/app/data/checkouts

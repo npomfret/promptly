@@ -2,7 +2,7 @@
 
 These example scripts demonstrate how to integrate Promptly with AI coding assistants like Claude Code and Gemini CLI using hooks.
 
-**Server**: `http://promptly.snowmonkey.co.uk:3000` (deployed)
+**Server**: `https://promptly.snowmonkey.co.uk` (deployed with SSL/TLS)
 
 ## Available Scripts
 
@@ -29,7 +29,7 @@ These example scripts demonstrate how to integrate Promptly with AI coding assis
 Check that your deployed server is running:
 
 ```bash
-curl http://promptly.snowmonkey.co.uk:3000/health
+curl https://promptly.snowmonkey.co.uk/health
 # Or use the status script:
 ./scripts/status.sh
 ```
@@ -39,7 +39,7 @@ curl http://promptly.snowmonkey.co.uk:3000/health
 Get your project ID from the server:
 
 ```bash
-curl http://promptly.snowmonkey.co.uk:3000/projects
+curl https://promptly.snowmonkey.co.uk/projects
 ```
 
 Note your project ID from the list (currently: `cec04d6b28ab`).
@@ -50,9 +50,9 @@ If your project ID is different, edit both scripts and update the `projectId`:
 
 ```bash
 # In prompt-enhancer.sh and ask-the-expert.sh, change:
-curl -s -X POST http://promptly.snowmonkey.co.uk:3000/enhance?projectId=cec04d6b28ab
+curl -s -X POST https://promptly.snowmonkey.co.uk/enhance?projectId=cec04d6b28ab
 # To:
-curl -s -X POST http://promptly.snowmonkey.co.uk:3000/enhance?projectId=YOUR_PROJECT_ID
+curl -s -X POST https://promptly.snowmonkey.co.uk/enhance?projectId=YOUR_PROJECT_ID
 ```
 
 ### 4. Configure Your AI Assistant

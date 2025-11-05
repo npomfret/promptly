@@ -18,7 +18,7 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') - Received input: $PROMPT" >> "$LOG_FILE"
 JSON_PAYLOAD=$(jq -n --arg msg "$PROMPT" '{message: $msg}')
 
 # Execute the curl command and get the critical analysis
-ANALYSIS=$(curl -s -X POST http://promptly.snowmonkey.co.uk:3000/ask?projectId=cec04d6b28ab \
+ANALYSIS=$(curl -s -X POST https://promptly.snowmonkey.co.uk/ask?projectId=cec04d6b28ab \
     -H "Content-Type: application/json" \
     -b "$COOKIE_FILE" -c "$COOKIE_FILE" \
     -d "$JSON_PAYLOAD" \
