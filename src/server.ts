@@ -531,6 +531,23 @@ function writeHistoryEntry(data: {
 }
 
 /**
+ * Helper function to redact sensitive tokens from Git URLs
+ */
+function redactGitUrl(gitUrl: string): string {
+    try {
+        const url = new URL(gitUrl);
+        if (url.username) {
+            // Replace username (token) with asterisks
+            url.username = '***';
+        }
+        return url.toString();
+    } catch {
+        // If not a valid URL, return as-is
+        return gitUrl;
+    }
+}
+
+/**
  * Helper function to generate HTML table of projects
  */
 function generateProjectsTable(): string {
@@ -549,7 +566,7 @@ function generateProjectsTable(): string {
             return `
     <tr class="project-item">
       <td><a href="/project/${p.id}">${p.id}</a></td>
-      <td>${p.gitUrl}</td>
+      <td>${redactGitUrl(p.gitUrl)}</td>
       <td>${p.branch}</td>
       <td class="text-muted">${new Date(p.lastUpdated).toLocaleString()}</td>
       <td class="actions">
@@ -876,6 +893,11 @@ app.post('/api/projects', async (req: Request, res: Response) => {
             return res.status(400).send('<p class="error">Git URL is required</p>');
         }
 
+        // Validate URL format (must be HTTPS for PAT to work)
+        if (accessToken && accessToken.trim() && !gitUrl.startsWith('https://')) {
+            return res.status(400).send('<p class="error">When using a Personal Access Token, Git URL must use HTTPS format (e.g., https://github.com/user/repo.git)</p>');
+        }
+
         // If access token is provided, embed it in the Git URL
         let finalGitUrl = gitUrl;
         if (accessToken && accessToken.trim()) {
@@ -885,8 +907,10 @@ app.post('/api/projects', async (req: Request, res: Response) => {
                 url.username = accessToken.trim();
                 url.password = ''; // GitHub doesn't use password with PAT
                 finalGitUrl = url.toString();
+                console.log(`[DEBUG] Embedded token in URL. Original: ${gitUrl}, Final: ${finalGitUrl.replace(accessToken.trim(), 'REDACTED')}`);
             } catch (error) {
-                return res.status(400).send('<p class="error">Invalid Git URL format</p>');
+                console.error('[ERROR] Failed to parse Git URL:', error);
+                return res.status(400).send('<p class="error">Invalid Git URL format. Must be a valid HTTPS URL (e.g., https://github.com/user/repo.git)</p>');
             }
         }
 
