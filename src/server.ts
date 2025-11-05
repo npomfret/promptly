@@ -557,15 +557,10 @@ function generateProjectsTable(): string {
           <i data-lucide="message-circle" class="icon"></i>
           Enhance
         </a>
-        <a href="/ask/${p.id}" class="btn btn-success btn-small">
+        <a href="/ask/${p.id}" class="btn btn-primary btn-small">
           <i data-lucide="help-circle" class="icon"></i>
           Ask
         </a>
-        <button class="btn btn-secondary btn-small"
-                onclick="togglePrompt('${promptId}')">
-          <i data-lucide="file-text" class="icon"></i>
-          Prompt
-        </button>
         <button class="btn btn-danger btn-small"
                 hx-delete="/api/projects/${p.id}"
                 hx-target="#project-list"
@@ -875,14 +870,28 @@ app.get('/api/projects-table', (_req: Request, res: Response) => {
  */
 app.post('/api/projects', async (req: Request, res: Response) => {
     try {
-        const { gitUrl, branch } = req.body;
+        const { gitUrl, branch, accessToken } = req.body;
 
         if (!gitUrl) {
             return res.status(400).send('<p class="error">Git URL is required</p>');
         }
 
+        // If access token is provided, embed it in the Git URL
+        let finalGitUrl = gitUrl;
+        if (accessToken && accessToken.trim()) {
+            try {
+                const url = new URL(gitUrl);
+                // Embed token as: https://token@github.com/user/repo.git
+                url.username = accessToken.trim();
+                url.password = ''; // GitHub doesn't use password with PAT
+                finalGitUrl = url.toString();
+            } catch (error) {
+                return res.status(400).send('<p class="error">Invalid Git URL format</p>');
+            }
+        }
+
         // Add project (will clone repository and update config)
-        const project = await addProjectToConfig(gitUrl, CHECKOUT_DIR, branch || 'main');
+        const project = await addProjectToConfig(finalGitUrl, CHECKOUT_DIR, branch || 'main');
 
         // Create cached content for the new project
         project.cachedContent = await createCachedContent(project);
@@ -1117,11 +1126,12 @@ app.get('/api/project-history', (req: Request, res: Response) => {
             }
         }
 
-        // Sort by timestamp (oldest first)
-        historyEntries.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+        // Sort by timestamp (newest first) and limit to 10 most recent
+        historyEntries.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+        const recentEntries = historyEntries.slice(0, 10);
 
         // Generate HTML
-        const messagesHTML = historyEntries
+        const messagesHTML = recentEntries
             .map(entry => {
                 const userHTML = generateMessageHTML('user', entry.request, entry.timestamp, entry.sessionId);
                 const modelHTML = generateMessageHTML('model', entry.response, entry.timestamp, entry.sessionId);

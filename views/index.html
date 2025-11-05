@@ -20,12 +20,23 @@
             hx-on::after-request="if(event.detail.successful) this.reset()">
         <div class="form-group">
           <label for="gitUrl">Git URL</label>
-          <input type="url" id="gitUrl" name="gitUrl" required
+          <input type="text" id="gitUrl" name="gitUrl" required
                  placeholder="https://github.com/user/repo.git">
         </div>
+
         <div class="form-group">
           <label for="branch">Branch</label>
           <input type="text" id="branch" name="branch" value="main" required>
+        </div>
+
+        <div class="form-group">
+          <label for="accessToken">Personal Access Token (optional for private repos)</label>
+          <input type="password" id="accessToken" name="accessToken"
+                 placeholder="ghp_xxxxxxxxxxxx">
+          <small class="text-muted">
+            Token will be embedded in the Git URL.
+            <a href="https://github.com/settings/tokens" target="_blank" rel="noopener">Create token →</a>
+          </small>
         </div>
         <button type="submit" class="btn btn-primary">
           <i data-lucide="plus" class="icon"></i>
