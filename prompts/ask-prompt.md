@@ -17,7 +17,7 @@ Pay special attention to:
 - source files
 - test files
 
-Use git to examine the most 5 recent 5 commits.
+Use git to examine the most recent 5 commits.
 
 ## Your Role
 
