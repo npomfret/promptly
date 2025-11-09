@@ -278,6 +278,18 @@ tr:last-child td {
   background: var(--bg);
 }
 
+.chat-header h2 {
+  margin-bottom: 0.25rem;
+  font-size: 1.125rem;
+}
+
+.chat-header .text-muted {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+}
+
 .home-icon {
   display: inline-flex;
   align-items: center;

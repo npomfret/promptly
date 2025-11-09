@@ -9,6 +9,7 @@
     "start:prod": "tsx src/server.ts",
     "stop": "./scripts/stop.sh",
     "projects": "./scripts/projects.sh",
+    "migrate": "tsx scripts/migrate-projects.ts",
     "dev": "tsx watch src/server.ts",
     "type-check": "tsc --noEmit",
     "format": "dprint fmt",

@@ -552,6 +552,22 @@ function redactGitUrl(gitUrl: string): string {
 }
 
 /**
+ * Extract a clean repository name from Git URL (e.g., "owner/repo")
+ */
+function extractRepoName(gitUrl: string): string {
+    try {
+        const url = new URL(gitUrl);
+        // Remove leading slash and .git extension
+        let path = url.pathname.replace(/^\//, '').replace(/\.git$/, '');
+        return path || gitUrl;
+    } catch {
+        // If not a valid URL, try to extract from string
+        const match = gitUrl.match(/([^/:]+\/[^/:]+?)(\.git)?$/);
+        return match ? match[1] : gitUrl;
+    }
+}
+
+/**
  * Helper function to generate HTML table of projects
  */
 function generateProjectsTable(): string {
@@ -778,7 +794,8 @@ app.get('/project/:projectId', (req: Request, res: Response) => {
     let chatHTML = readFileSync(chatPath, 'utf-8');
 
     chatHTML = chatHTML
-        .replace(/\{\{PROJECT_NAME\}\}/g, project.gitUrl.split('/').pop()?.replace('.git', '') || project.id)
+        .replace(/\{\{PROJECT_NAME\}\}/g, extractRepoName(project.gitUrl))
+        .replace(/\{\{REPO_NAME\}\}/g, extractRepoName(project.gitUrl))
         .replace(/\{\{GIT_URL\}\}/g, project.gitUrl)
         .replace(/\{\{PROJECT_ID\}\}/g, project.id)
         .replace(/\{\{PROJECT_BRANCH\}\}/g, project.branch)
@@ -883,7 +900,8 @@ app.get('/ask/:projectId', (req: Request, res: Response) => {
     let askHTML = readFileSync(askPath, 'utf-8');
 
     askHTML = askHTML
-        .replace(/\{\{PROJECT_NAME\}\}/g, project.gitUrl.split('/').pop()?.replace('.git', '') || project.id)
+        .replace(/\{\{PROJECT_NAME\}\}/g, extractRepoName(project.gitUrl))
+        .replace(/\{\{REPO_NAME\}\}/g, extractRepoName(project.gitUrl))
         .replace(/\{\{GIT_URL\}\}/g, project.gitUrl)
         .replace(/\{\{PROJECT_ID\}\}/g, project.id)
         .replace(/\{\{PROJECT_BRANCH\}\}/g, project.branch)
@@ -916,25 +934,11 @@ app.post('/api/projects', async (req: Request, res: Response) => {
             return res.status(400).send('<p class="error">When using a Personal Access Token, Git URL must use HTTPS format (e.g., https://github.com/user/repo.git)</p>');
         }
 
-        // If access token is provided, embed it in the Git URL
-        let finalGitUrl = gitUrl;
-        if (accessToken && accessToken.trim()) {
-            try {
-                const url = new URL(gitUrl);
-                // For GitHub fine-grained PAT: use 'oauth2' as username and token as password
-                // Format: https://oauth2:TOKEN@github.com/user/repo.git
-                url.username = 'oauth2';
-                url.password = accessToken.trim();
-                finalGitUrl = url.toString();
-                console.log(`[DEBUG] Embedded token in URL. Original: ${gitUrl}, Final: ${finalGitUrl.replace(accessToken.trim(), 'REDACTED')}`);
-            } catch (error) {
-                console.error('[ERROR] Failed to parse Git URL:', error);
-                return res.status(400).send('<p class="error">Invalid Git URL format. Must be a valid HTTPS URL (e.g., https://github.com/user/repo.git)</p>');
-            }
-        }
+        // Normalize the access token (trim and convert empty string to undefined)
+        const normalizedToken = accessToken && accessToken.trim() ? accessToken.trim() : undefined;
 
-        // Add project (will clone repository and update config)
-        const project = await addProjectToConfig(finalGitUrl, CHECKOUT_DIR, branch || 'main');
+        // Add project with separate access token
+        const project = await addProjectToConfig(gitUrl, CHECKOUT_DIR, branch || 'main', normalizedToken);
 
         // Create cached content for the new project
         project.cachedContent = await createCachedContent(project);
@@ -1584,7 +1588,7 @@ app.get('/projects', (_req: Request, res: Response<ProjectsListResponse>) => {
  */
 app.post('/projects', async (req: Request<{}, AddProjectResponse | ErrorResponse, AddProjectRequest>, res: Response<AddProjectResponse | ErrorResponse>) => {
     try {
-        const { gitUrl, branch } = req.body;
+        const { gitUrl, branch, accessToken } = req.body;
 
         if (!gitUrl) {
             return res.status(400).json({
@@ -1592,8 +1596,18 @@ app.post('/projects', async (req: Request<{}, AddProjectResponse | ErrorResponse
             });
         }
 
-        // Add project (will clone repository and update config)
-        const project = await addProjectToConfig(gitUrl, CHECKOUT_DIR, branch);
+        // Validate URL format (must be HTTPS for PAT to work)
+        if (accessToken && accessToken.trim() && !gitUrl.startsWith('https://')) {
+            return res.status(400).json({
+                error: 'When using a Personal Access Token, Git URL must use HTTPS format (e.g., https://github.com/user/repo.git)',
+            });
+        }
+
+        // Normalize the access token (trim and convert empty string to undefined)
+        const normalizedToken = accessToken && accessToken.trim() ? accessToken.trim() : undefined;
+
+        // Add project with separate access token
+        const project = await addProjectToConfig(gitUrl, CHECKOUT_DIR, branch || 'main', normalizedToken);
 
         // Create cached content for the new project
         project.cachedContent = await createCachedContent(project);

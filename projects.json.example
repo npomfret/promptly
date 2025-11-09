@@ -1,7 +1,16 @@
 {
   "projects": [
     {
-      "gitUrl": "git@github.com:user/repo.git",
+      "gitUrl": "https://github.com/user/public-repo.git",
+      "branch": "main"
+    },
+    {
+      "gitUrl": "https://github.com/user/private-repo.git",
+      "branch": "main",
+      "accessToken": "ghp_your_github_personal_access_token_here"
+    },
+    {
+      "gitUrl": "git@github.com:user/ssh-repo.git",
       "branch": "main"
     }
   ]

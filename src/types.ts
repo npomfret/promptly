@@ -11,6 +11,7 @@ export interface Project {
     gitUrl: string;
     branch: string;
     path: string;
+    accessToken?: string; // Optional Personal Access Token for private repos
     cachedContent?: CachedContent;
     cacheStale?: boolean;
     lastUpdated: Date;
@@ -21,6 +22,7 @@ export interface Project {
 export interface ProjectConfig {
     gitUrl: string;
     branch?: string;
+    accessToken?: string; // Optional Personal Access Token for private repos
 }
 
 export interface ProjectsConfigFile {
@@ -100,6 +102,7 @@ export interface ProjectsListResponse {
 export interface AddProjectRequest {
     gitUrl: string;
     branch?: string;
+    accessToken?: string; // Optional Personal Access Token for private repos
 }
 
 export interface AddProjectResponse {

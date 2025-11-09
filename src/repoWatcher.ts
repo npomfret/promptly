@@ -1,5 +1,25 @@
 import { execSync } from 'child_process';
+import { buildAuthenticatedGitUrl } from './projectManager.js';
 import type { Project } from './types.js';
+
+/**
+ * Set remote URL with authentication if needed
+ */
+function setAuthenticatedRemote(project: Project): void {
+    if (!project.accessToken) {
+        return; // No token, no need to update remote
+    }
+
+    const authUrl = buildAuthenticatedGitUrl(project.gitUrl, project.accessToken);
+    try {
+        execSync(`git remote set-url origin "${authUrl}"`, {
+            cwd: project.path,
+            stdio: 'pipe',
+        });
+    } catch (error) {
+        console.warn(`[!] Failed to set authenticated remote for ${project.id}:`, error instanceof Error ? error.message : 'Unknown error');
+    }
+}
 
 /**
  * Check if a project has updates from remote repository
@@ -7,6 +27,9 @@ import type { Project } from './types.js';
  */
 export async function checkForUpdates(project: Project): Promise<boolean> {
     try {
+        // Set authenticated remote URL if token is available
+        setAuthenticatedRemote(project);
+
         // Fetch latest from remote (doesn't modify working tree)
         execSync('git fetch origin', {
             cwd: project.path,
@@ -45,6 +68,9 @@ export async function checkForUpdates(project: Project): Promise<boolean> {
 export async function pullUpdates(project: Project): Promise<boolean> {
     try {
         console.log(`[...] Pulling updates for project ${project.id}...`);
+
+        // Set authenticated remote URL if token is available
+        setAuthenticatedRemote(project);
 
         execSync(`git pull origin ${project.branch}`, {
             cwd: project.path,
