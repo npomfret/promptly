@@ -460,15 +460,20 @@ tr:last-child td {
 
 .chat-input-form {
   display: flex;
+  flex-direction: column;
   gap: 0.75rem;
-  align-items: flex-end;
 }
 
 .chat-input-form textarea {
-  flex: 1;
+  width: 100%;
   min-height: 60px;
   max-height: 200px;
   resize: vertical;
+}
+
+.chat-input-form .button-row {
+  display: flex;
+  justify-content: flex-end;
 }
 
 /* Actions */
@@ -608,8 +613,8 @@ section:first-of-type {
     max-width: 90%;
   }
 
-  .chat-input-form {
-    flex-direction: column;
+  .chat-input-form .button-row {
+    justify-content: stretch;
   }
 
   .chat-input-form button {

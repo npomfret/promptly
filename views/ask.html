@@ -56,11 +56,13 @@
                       placeholder="Ask a question or describe your implementation idea..."
                       required
                       autofocus></textarea>
-            <button type="submit" class="btn btn-primary">
-              <i data-lucide="send" class="icon"></i>
-              <span class="htmx-indicator">Sending...</span>
-              <span class="htmx-not-indicator">Send</span>
-            </button>
+            <div class="button-row">
+              <button type="submit" class="btn btn-primary">
+                <i data-lucide="send" class="icon"></i>
+                <span class="htmx-indicator">Sending...</span>
+                <span class="htmx-not-indicator">Send</span>
+              </button>
+            </div>
           </form>
         </div>
         <div class="chat-messages" id="messages">
@@ -116,6 +118,22 @@
     window.addEventListener('load', () => {
       const messages = document.getElementById('messages');
       messages.scrollTop = messages.scrollHeight;
+    });
+
+    // Submit form on Enter (without Shift)
+    document.addEventListener('DOMContentLoaded', () => {
+      const textarea = document.querySelector('.chat-input-form textarea');
+      if (textarea) {
+        textarea.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            const form = e.target.closest('form');
+            if (form) {
+              form.requestSubmit();
+            }
+          }
+        });
+      }
     });
 
     // Switch tabs
