@@ -339,13 +339,26 @@ function processUserMessage(message: string): string {
 function isCacheExpiredError(error: any): boolean {
     // Convert error to string to catch message in any property
     const errorString = String(error);
-    const statusMatch = error?.status === 403;
+
+    // Check for status 403 in multiple ways
+    const statusMatch = error?.status === 403
+        || error?.statusCode === 403
+        || errorString.includes('[403 Forbidden]')
+        || errorString.includes('403 Forbidden');
+
+    // Check for cache-related error messages
     const messageMatch = errorString.includes('CachedContent not found')
         || errorString.includes('permission denied')
         || error?.message?.includes('CachedContent not found')
         || error?.message?.includes('permission denied');
 
-    return statusMatch && messageMatch;
+    const isExpiredCache = statusMatch && messageMatch;
+
+    if (isExpiredCache) {
+        console.log(`[DEBUG] Detected cache expiration error:`, errorString.substring(0, 200));
+    }
+
+    return isExpiredCache;
 }
 
 /**
