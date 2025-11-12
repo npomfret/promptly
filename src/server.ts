@@ -380,7 +380,7 @@ async function handleCacheExpiration(projectId: string): Promise<void> {
     // Clear all chat sessions for this project (they reference the old cache)
     let clearedCount = 0;
     for (const [key] of chatSessions.entries()) {
-        if (key.endsWith(`:${projectId}`)) {
+        if (key.includes(`:${projectId}:`)) {
             chatSessions.delete(key);
             clearedCount++;
         }
@@ -984,7 +984,7 @@ app.delete('/api/projects/:projectId', async (req: Request, res: Response) => {
 
         // Clear all sessions for this project
         for (const [key] of chatSessions.entries()) {
-            if (key.endsWith(`:${projectId}`)) {
+            if (key.includes(`:${projectId}:`)) {
                 chatSessions.delete(key);
             }
         }
@@ -1349,7 +1349,7 @@ app.post('/cache/refresh', async (req: Request, res: Response<CacheRefreshRespon
         // Clear sessions for this project
         let clearedCount = 0;
         for (const [key] of chatSessions.entries()) {
-            if (key.endsWith(`:${projectId}`)) {
+            if (key.includes(`:${projectId}:`)) {
                 chatSessions.delete(key);
                 clearedCount++;
             }
@@ -1667,7 +1667,7 @@ app.delete('/projects/:projectId', async (req: Request, res: Response<RemoveProj
 
         // Clear all sessions for this project
         for (const [key] of chatSessions.entries()) {
-            if (key.endsWith(`:${projectId}`)) {
+            if (key.includes(`:${projectId}:`)) {
                 chatSessions.delete(key);
             }
         }
