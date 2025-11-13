@@ -1134,6 +1134,7 @@ app.post('/api/ask-message', async (req: Request, res: Response) => {
  */
 app.get('/api/project-history', (req: Request, res: Response) => {
     const projectId = req.query.projectId as string;
+    const mode = req.query.mode as 'enhance' | 'ask' | undefined;
 
     if (!projectId) {
         return res.status(400).send('<p class="error">Project ID is required</p>');
@@ -1189,9 +1190,14 @@ app.get('/api/project-history', (req: Request, res: Response) => {
             }
         }
 
+        // Filter by mode if specified
+        const filteredEntries = mode
+            ? historyEntries.filter(entry => entry.mode === mode)
+            : historyEntries;
+
         // Sort by timestamp (newest first) and limit to 10 most recent
-        historyEntries.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-        const recentEntries = historyEntries.slice(0, 10);
+        filteredEntries.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+        const recentEntries = filteredEntries.slice(0, 10);
 
         // Generate HTML
         const messagesHTML = recentEntries

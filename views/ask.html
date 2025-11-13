@@ -73,9 +73,9 @@
       <!-- Conversation Tab (Full History) -->
       <div id="tab-conversation" class="tab-content">
         <div class="chat-messages" id="conversation-messages"
-             hx-get="/api/project-history?projectId={{PROJECT_ID}}"
+             hx-get="/api/project-history?projectId={{PROJECT_ID}}&mode=ask"
              hx-trigger="load">
-          <p class="text-muted">Loading conversation history...</p>
+          <p class="text-muted">Loading ask history...</p>
         </div>
       </div>
 
