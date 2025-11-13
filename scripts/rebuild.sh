@@ -10,6 +10,8 @@ echo ""
 echo "Copying updated files..."
 scp -r \
     src \
+    views \
+    public \
     prompts \
     package.json \
     package-lock.json \
