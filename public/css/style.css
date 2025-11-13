@@ -1,6 +1,6 @@
 :root {
-  --bg-base: #05060a;
-  --bg-elevated: rgba(9, 11, 25, 0.65);
+  --bg-base: #0a1222;
+  --bg-elevated: rgba(18, 24, 45, 0.7);
   --glass-border: rgba(255, 255, 255, 0.07);
   --glass-border-strong: rgba(255, 255, 255, 0.2);
   --text-primary: #f8fafc;
@@ -60,14 +60,14 @@ body::after {
 }
 
 body::before {
-  background: radial-gradient(circle at 20% 20%, rgba(79, 70, 229, 0.4), transparent 55%),
-    radial-gradient(circle at 80% 0%, rgba(236, 72, 153, 0.35), transparent 60%);
+  background: radial-gradient(circle at 20% 20%, rgba(99, 102, 241, 0.45), transparent 55%),
+    radial-gradient(circle at 80% 0%, rgba(236, 72, 153, 0.4), transparent 60%);
   filter: blur(25px);
 }
 
 body::after {
-  background: radial-gradient(circle at 40% 80%, rgba(34, 211, 238, 0.35), transparent 60%),
-    radial-gradient(circle at 80% 60%, rgba(52, 211, 153, 0.25), transparent 75%);
+  background: radial-gradient(circle at 40% 80%, rgba(34, 211, 238, 0.45), transparent 60%),
+    radial-gradient(circle at 80% 60%, rgba(52, 211, 153, 0.35), transparent 75%);
   animation: aurora 24s ease-in-out infinite alternate;
 }
 
@@ -622,7 +622,19 @@ tbody td a:hover {
   gap: 1rem;
 }
 
+.chat-history {
+  background: linear-gradient(140deg, rgba(13, 20, 44, 0.9), rgba(20, 30, 62, 0.8));
+  border-color: rgba(191, 219, 254, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.25), 0 35px 80px rgba(5, 8, 20, 0.45);
+  min-height: clamp(420px, 60vh, 900px);
+  max-height: calc(100vh - 340px);
+  overflow-y: auto;
+}
+
 .message {
+  width: fit-content;
+  max-width: min(72ch, 100%);
+  align-self: flex-start;
   padding: 1rem 1.25rem;
   border-radius: var(--radius);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -630,13 +642,39 @@ tbody td a:hover {
 }
 
 .message.user {
+  margin-left: auto;
+  align-self: flex-end;
   border-color: rgba(52, 211, 153, 0.35);
   background: rgba(16, 185, 129, 0.08);
 }
 
 .message.model {
+  margin-right: auto;
+  align-self: flex-start;
   border-color: rgba(59, 130, 246, 0.35);
   background: rgba(37, 99, 235, 0.08);
+}
+
+.chat-history .message {
+  background: rgba(13, 20, 44, 0.75);
+  border-color: rgba(191, 219, 254, 0.3);
+  box-shadow: 0 20px 35px rgba(4, 7, 21, 0.35);
+}
+
+.chat-history .message.user {
+  background: linear-gradient(135deg, rgba(52, 211, 153, 0.3), rgba(59, 130, 246, 0.24));
+  border-color: rgba(125, 211, 252, 0.7);
+  box-shadow: 0 25px 45px rgba(30, 64, 175, 0.35);
+}
+
+.chat-history .message.model {
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.3), rgba(129, 140, 248, 0.28));
+  border-color: rgba(224, 231, 255, 0.65);
+  box-shadow: 0 25px 45px rgba(109, 40, 217, 0.35);
+}
+
+.chat-history .message-time {
+  color: rgba(248, 250, 252, 0.65);
 }
 
 .message-time {
