@@ -612,12 +612,12 @@ function generateProjectsTable(): string {
 
             return `
     <tr class="project-item">
-      <td><a href="/project/${p.id}">${p.id}</a> ${statusBadge}</td>
+      <td><a href="/enhance/${p.id}">${p.id}</a> ${statusBadge}</td>
       <td>${redactGitUrl(p.gitUrl)}</td>
       <td>${p.branch}</td>
       <td class="text-muted">${new Date(p.lastUpdated).toLocaleString()}</td>
       <td class="actions">
-        <a href="/project/${p.id}" class="btn btn-primary btn-small ${disabledClass}" ${disabledAttr}>
+        <a href="/enhance/${p.id}" class="btn btn-primary btn-small ${disabledClass}" ${disabledAttr}>
           <i data-lucide="message-circle" class="icon"></i>
           Enhance
         </a>
@@ -629,9 +629,9 @@ function generateProjectsTable(): string {
                 hx-delete="/api/projects/${p.id}"
                 hx-target="#project-list"
                 hx-swap="innerHTML"
-                hx-confirm="Are you sure you want to delete ${p.id}?">
+                hx-confirm="Are you sure you want to delete ${p.id}?"
+                title="Delete project">
           <i data-lucide="trash-2" class="icon"></i>
-          Delete
         </button>
       </td>
     </tr>
@@ -716,7 +716,7 @@ app.get('/', (_req: Request, res: Response) => {
 /**
  * Serve the chat page for a specific project
  */
-app.get('/project/:projectId', (req: Request, res: Response) => {
+app.get('/enhance/:projectId', (req: Request, res: Response) => {
     const { projectId } = req.params;
     const project = projects.get(projectId);
 
@@ -803,8 +803,8 @@ app.get('/project/:projectId', (req: Request, res: Response) => {
     // Load system prompt for this project (with PROJECT_DIR substituted - this is what Gemini sees)
     const systemPrompt = loadSystemPrompt(project.path);
 
-    // Load and populate chat template
-    const chatPath = join(__dirname, '..', 'views', 'chat.html');
+    // Load and populate enhance template
+    const chatPath = join(__dirname, '..', 'views', 'enhance.html');
     let chatHTML = readFileSync(chatPath, 'utf-8');
 
     chatHTML = chatHTML
