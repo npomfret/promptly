@@ -201,25 +201,44 @@ export async function initializeProjects(checkoutDir: string): Promise<Map<strin
         const projectId = generateProjectId(cleanUrl, branch);
         const projectPath = path.join(checkoutDir, projectId);
 
-        // Clone repository if needed (pass accessToken if available)
-        if (projectConfig.accessToken) {
-            console.log(`[DEBUG] Project ${projectId} has access token (length: ${projectConfig.accessToken.length})`);
+        try {
+            // Clone repository if needed (pass accessToken if available)
+            if (projectConfig.accessToken) {
+                console.log(`[DEBUG] Project ${projectId} has access token (length: ${projectConfig.accessToken.length})`);
+            }
+            await cloneRepository(cleanUrl, projectPath, branch, projectConfig.accessToken);
+
+            // Create project object
+            const project: Project = {
+                id: projectId,
+                gitUrl: cleanUrl,
+                branch,
+                path: projectPath,
+                accessToken: projectConfig.accessToken,
+                lastUpdated: new Date(),
+                status: 'ready',  // Existing projects that loaded successfully are ready
+            };
+
+            projects.set(projectId, project);
+            console.log(`Initialized project ${projectId}: ${cleanUrl}`);
+        } catch (error: any) {
+            // If clone fails, still add the project but mark it as error
+            console.error(`[ERROR] Failed to initialize project ${projectId}: ${error.message}`);
+
+            const project: Project = {
+                id: projectId,
+                gitUrl: cleanUrl,
+                branch,
+                path: projectPath,
+                accessToken: projectConfig.accessToken,
+                lastUpdated: new Date(),
+                status: 'error',
+                errorMessage: error.message || 'Failed to clone repository',
+            };
+
+            projects.set(projectId, project);
+            console.log(`Project ${projectId} added with error status`);
         }
-        await cloneRepository(cleanUrl, projectPath, branch, projectConfig.accessToken);
-
-        // Create project object
-        const project: Project = {
-            id: projectId,
-            gitUrl: cleanUrl,
-            branch,
-            path: projectPath,
-            accessToken: projectConfig.accessToken,
-            lastUpdated: new Date(),
-            status: 'ready',  // Existing projects that loaded successfully are ready
-        };
-
-        projects.set(projectId, project);
-        console.log(`Initialized project ${projectId}: ${cleanUrl}`);
     }
 
     return projects;

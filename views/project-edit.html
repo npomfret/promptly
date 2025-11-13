@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Configure · {{PROJECT_NAME}}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+  <main class="page-shell">
+    <header class="hero glass-panel fade-up" data-animate>
+      <div style="display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1rem;">
+        <button onclick="window.history.back()" class="home-icon" title="Go Back">
+          <i data-lucide="arrow-left" class="icon"></i>
+        </button>
+        <a href="/" class="home-icon" title="Home">
+          <i data-lucide="home" class="icon"></i>
+        </a>
+        <div style="flex: 1;">
+          <p class="eyebrow">Project Settings</p>
+          <h1>{{PROJECT_NAME}}</h1>
+        </div>
+      </div>
+      <p class="lede">Manage repository access and cache behaviour for <code>{{PROJECT_ID}}</code>.</p>
+      <div class="hero-actions">
+        <a class="btn btn-secondary" href="/enhance/{{PROJECT_ID}}">
+          <i data-lucide="message-circle" class="icon"></i>
+          Enhance View
+        </a>
+        <a class="btn btn-secondary" href="/ask/{{PROJECT_ID}}">
+          <i data-lucide="help-circle" class="icon"></i>
+          Ask View
+        </a>
+      </div>
+    </header>
+
+    <section class="glass-panel fade-up" data-animate data-delay="100">
+      {{FLASH}}
+      <form method="POST" action="{{FORM_ACTION}}" class="settings-form">
+        <div class="form-group">
+          <label for="gitUrl">Git URL</label>
+          <input type="text" id="gitUrl" name="gitUrl" value="{{GIT_URL}}" required>
+          <small class="inline-note">Provide the clean HTTPS or SSH URL for this repository.</small>
+        </div>
+
+        <div class="form-group">
+          <label for="branch">Branch</label>
+          <input type="text" id="branch" name="branch" value="{{PROJECT_BRANCH}}" required>
+          <small class="inline-note">Branch is part of the project identity; changing it may refresh caches.</small>
+        </div>
+
+        <div class="form-group">
+          <label for="accessToken">Personal Access Token</label>
+          <input type="password" id="accessToken" name="accessToken" placeholder="ghp_xxxxxxxxxxxx">
+          <small class="inline-note">Leave blank to keep the current token. Provide a new token to replace it.</small>
+          <label class="checkbox-row">
+            <input type="checkbox" name="clearToken">
+            <span>Remove stored token</span>
+          </label>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">
+            <i data-lucide="save" class="icon"></i>
+            Save Changes
+          </button>
+          <a class="btn btn-secondary" href="/">
+            Cancel
+          </a>
+        </div>
+      </form>
+    </section>
+
+    <section class="glass-panel fade-up" data-animate data-delay="200">
+      <div class="section-header">
+        <div>
+          <p class="eyebrow">Status</p>
+          <h2>Operational snapshot</h2>
+        </div>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span class="text-muted">State</span>
+          {{STATUS_BADGE}}
+          <p class="text-muted">Last refreshed {{LAST_UPDATED}}</p>
+        </div>
+        <div class="stat-card">
+          <span class="text-muted">Git URL</span>
+          <p>{{GIT_URL}}</p>
+        </div>
+        <div class="stat-card">
+          <span class="text-muted">Branch</span>
+          <p>{{PROJECT_BRANCH}}</p>
+        </div>
+        <div class="stat-card">
+          <span class="text-muted">Checkout path</span>
+          <p><code>{{PROJECT_PATH}}</code></p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="/js/ui.js"></script>
+  <script>
+    lucide.createIcons();
+  </script>
+</body>
+</html>

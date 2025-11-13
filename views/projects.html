@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Active Repositories · Promptly</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+  <main class="page-shell">
+    <header class="hero glass-panel fade-up" data-animate>
+      <div style="display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1rem;">
+        <button onclick="window.history.back()" class="home-icon" title="Go Back">
+          <i data-lucide="arrow-left" class="icon"></i>
+        </button>
+        <a href="/" class="home-icon" title="Home">
+          <i data-lucide="home" class="icon"></i>
+        </a>
+        <div style="flex: 1;">
+          <p class="eyebrow">Projects</p>
+          <h1>Active repositories</h1>
+        </div>
+      </div>
+      <p class="lede">Enhance and Ask views open in cinematic glass workspaces.</p>
+    </header>
+
+    <section class="glass-panel fade-up" data-animate data-delay="100">
+      <div id="project-list" hx-get="/api/projects-table" hx-trigger="load">
+        <p class="text-muted">Loading projects...</p>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="/js/ui.js"></script>
+  <script>
+    lucide.createIcons();
+    document.body.addEventListener('htmx:afterSwap', () => {
+      lucide.createIcons();
+    });
+  </script>
+</body>
+</html>

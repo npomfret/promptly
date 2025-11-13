@@ -4,12 +4,21 @@ import { execSync } from 'child_process';
 import dotenv from 'dotenv';
 import express, { NextFunction, Request, Response } from 'express';
 import session from 'express-session';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, promises as fsPromises } from 'fs';
 import MarkdownIt from 'markdown-it';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
-import { addProject as addProjectToConfig, initializeProjects, removeProject as removeProjectFromConfig } from './projectManager.js';
+import {
+    addProject as addProjectToConfig,
+    cleanGitUrl,
+    cloneRepository,
+    generateProjectId,
+    initializeProjects,
+    loadProjectsConfig,
+    removeProject as removeProjectFromConfig,
+    saveProjectsConfig,
+} from './projectManager.js';
 import { startWatching } from './repoWatcher.js';
 import type {
     AddProjectRequest,
@@ -22,6 +31,7 @@ import type {
     HealthResponse,
     HistoryResponse,
     Project,
+    ProjectConfig,
     ProjectInfo,
     ProjectsListResponse,
     RemoveProjectResponse,
@@ -581,6 +591,30 @@ function extractRepoName(gitUrl: string): string {
 }
 
 /**
+ * Convert a date to relative time format ("2 hours ago", "3 days ago", etc.)
+ */
+function timeAgo(date: Date): string {
+    const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
+
+    if (seconds < 60) return 'just now';
+
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `${days} day${days === 1 ? '' : 's'} ago`;
+
+    const months = Math.floor(days / 30);
+    if (months < 12) return `${months} month${months === 1 ? '' : 's'} ago`;
+
+    const years = Math.floor(months / 12);
+    return `${years} year${years === 1 ? '' : 's'} ago`;
+}
+
+/**
  * Helper function to generate HTML table of projects
  */
 function generateProjectsTable(): string {
@@ -612,10 +646,10 @@ function generateProjectsTable(): string {
 
             return `
     <tr class="project-item">
-      <td><a href="/enhance/${p.id}">${p.id}</a> ${statusBadge}</td>
+      <td><a href="/projects/${p.id}/edit">${p.id}</a> ${statusBadge}</td>
       <td>${redactGitUrl(p.gitUrl)}</td>
       <td>${p.branch}</td>
-      <td class="text-muted">${new Date(p.lastUpdated).toLocaleString()}</td>
+      <td class="text-muted">${timeAgo(new Date(p.lastUpdated))}</td>
       <td class="actions">
         <a href="/enhance/${p.id}" class="btn btn-primary btn-small ${disabledClass}" ${disabledAttr}>
           <i data-lucide="message-circle" class="icon"></i>
@@ -632,6 +666,7 @@ function generateProjectsTable(): string {
                 hx-confirm="Are you sure you want to delete ${p.id}?"
                 title="Delete project">
           <i data-lucide="trash-2" class="icon"></i>
+          Delete
         </button>
       </td>
     </tr>
@@ -663,6 +698,39 @@ function generateProjectsTable(): string {
       </tbody>
     </table>
   `;
+}
+
+function renderProjectEditPage(project: Project, flashHtml: string = ''): string {
+    const templatePath = join(__dirname, '..', 'views', 'project-edit.html');
+    let template = readFileSync(templatePath, 'utf-8');
+
+    const repoName = extractRepoName(project.gitUrl);
+    const statusBadge = project.status === 'cloning'
+        ? '<span class="status-badge status-cloning">Cloning...</span>'
+        : project.status === 'error'
+            ? `<span class="status-badge status-error" title="${escapeHtml(project.errorMessage || 'Unknown error')}">Error</span>`
+            : '<span class="status-badge status-ready">Ready</span>';
+
+    const lastUpdated = project.lastUpdated ? new Date(project.lastUpdated).toLocaleString() : 'Not available';
+
+    const replacements: Record<string, string> = {
+        PROJECT_NAME: escapeHtml(repoName || project.id),
+        PROJECT_ID: escapeHtml(project.id),
+        GIT_URL: escapeHtml(project.gitUrl),
+        PROJECT_BRANCH: escapeHtml(project.branch),
+        PROJECT_PATH: escapeHtml(project.path),
+        LAST_UPDATED: escapeHtml(lastUpdated),
+        STATUS_BADGE: statusBadge,
+        FLASH: flashHtml || '',
+        FORM_ACTION: `/projects/${project.id}/edit`,
+    };
+
+    for (const [key, value] of Object.entries(replacements)) {
+        const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+        template = template.replace(regex, value);
+    }
+
+    return template;
 }
 
 /**
@@ -699,6 +767,17 @@ function escapeHtml(text: string): string {
         .replace(/\n/g, '<br>');
 }
 
+function clearSessionsForProject(projectId: string): number {
+    let clearedCount = 0;
+    for (const key of chatSessions.keys()) {
+        if (key.includes(`:${projectId}:`)) {
+            chatSessions.delete(key);
+            clearedCount++;
+        }
+    }
+    return clearedCount;
+}
+
 // Routes
 
 // ============================================================================
@@ -711,6 +790,174 @@ function escapeHtml(text: string): string {
 app.get('/', (_req: Request, res: Response) => {
     const indexPath = join(__dirname, '..', 'views', 'index.html');
     res.sendFile(indexPath);
+});
+
+/**
+ * Serve the projects list page
+ */
+app.get('/projects', (_req: Request, res: Response) => {
+    const projectsPath = join(__dirname, '..', 'views', 'projects.html');
+    res.sendFile(projectsPath);
+});
+
+app.get('/projects/:projectId/edit', (req: Request, res: Response) => {
+    const { projectId } = req.params;
+    const project = projects.get(projectId);
+
+    if (!project) {
+        return res.status(404).send(`
+      <html>
+        <head><title>Project Not Found</title></head>
+        <body>
+          <h1>Project Not Found</h1>
+          <p>Project ID: ${escapeHtml(projectId)}</p>
+          <a href="/">Back to Projects</a>
+        </body>
+      </html>
+    `);
+    }
+
+    let flash = '';
+    if ('saved' in req.query) {
+        flash = '<div class="alert success">Project configuration updated.</div>';
+    }
+    const editPage = renderProjectEditPage(project, flash);
+    res.send(editPage);
+});
+
+app.post('/projects/:projectId/edit', async (req: Request, res: Response) => {
+    try {
+        const { projectId } = req.params;
+        const project = projects.get(projectId);
+
+        if (!project) {
+            return res.status(404).send(`<p class="error">Project ${escapeHtml(projectId)} not found</p>`);
+        }
+
+        const { gitUrl, branch, accessToken, clearToken } = req.body;
+
+        if (!gitUrl || typeof gitUrl !== 'string') {
+            const html = renderProjectEditPage(project, '<div class="alert error">Git URL is required.</div>');
+            return res.status(400).send(html);
+        }
+
+        const trimmedGitUrl = gitUrl.trim();
+        if (!trimmedGitUrl) {
+            const html = renderProjectEditPage(project, '<div class="alert error">Git URL cannot be empty.</div>');
+            return res.status(400).send(html);
+        }
+        const normalizedBranch = (branch && typeof branch === 'string' ? branch.trim() : '') || 'main';
+
+        const normalizedAccessToken = typeof accessToken === 'string' && accessToken.trim().length > 0
+            ? accessToken.trim()
+            : undefined;
+        const shouldClearToken = clearToken === 'on';
+
+        if (normalizedAccessToken && !trimmedGitUrl.startsWith('https://')) {
+            const html = renderProjectEditPage(project, '<div class="alert error">Personal access tokens require an HTTPS Git URL.</div>');
+            return res.status(400).send(html);
+        }
+
+        const cleanUrl = cleanGitUrl(trimmedGitUrl);
+        const newProjectId = generateProjectId(cleanUrl, normalizedBranch);
+
+        const config = await loadProjectsConfig();
+        const configIndex = config.projects.findIndex(p => {
+            const storedBranch = p.branch || 'main';
+            const storedId = generateProjectId(cleanGitUrl(p.gitUrl), storedBranch);
+            return storedId === projectId;
+        });
+
+        if (configIndex === -1) {
+            console.warn(`[WARN] Project ${projectId} not found in configuration during edit.`);
+            const html = renderProjectEditPage(project, '<div class="alert error">Project configuration entry is missing. Try re-adding the project.</div>');
+            return res.status(404).send(html);
+        }
+
+        if (newProjectId !== projectId) {
+            const conflict = config.projects.some((p, index) => {
+                if (index === configIndex) {
+                    return false;
+                }
+                const storedBranch = p.branch || 'main';
+                return generateProjectId(cleanGitUrl(p.gitUrl), storedBranch) === newProjectId;
+            });
+
+            if (conflict) {
+                const html = renderProjectEditPage(project, '<div class="alert error">Another project already uses that Git URL and branch.</div>');
+                return res.status(400).send(html);
+            }
+        }
+
+        let tokenToPersist: string | undefined;
+        if (shouldClearToken) {
+            tokenToPersist = undefined;
+        } else if (normalizedAccessToken) {
+            tokenToPersist = normalizedAccessToken;
+        } else {
+            tokenToPersist = project.accessToken;
+        }
+
+        const updatedEntry: ProjectConfig = {
+            gitUrl: cleanUrl,
+            branch: normalizedBranch,
+        };
+        if (tokenToPersist) {
+            updatedEntry.accessToken = tokenToPersist;
+        }
+
+        if (newProjectId === projectId) {
+            config.projects[configIndex] = updatedEntry;
+            await saveProjectsConfig(config);
+
+            project.gitUrl = cleanUrl;
+            project.branch = normalizedBranch;
+            project.accessToken = tokenToPersist;
+            project.cacheStale = true;
+            project.lastUpdated = new Date();
+            project.status = 'ready';
+            project.errorMessage = undefined;
+            clearSessionsForProject(projectId);
+
+            return res.redirect(`/projects/${projectId}/edit?saved=1`);
+        }
+
+        const newPath = join(CHECKOUT_DIR, newProjectId);
+        try {
+            await fsPromises.rm(newPath, { recursive: true, force: true });
+            await cloneRepository(cleanUrl, newPath, normalizedBranch, tokenToPersist);
+        } catch (error) {
+            console.error('[ERROR] Failed to clone repository for updated configuration:', error);
+            const html = renderProjectEditPage(project, '<div class="alert error">Failed to clone the repository with the new configuration. No changes were saved.</div>');
+            return res.status(500).send(html);
+        }
+
+        config.projects[configIndex] = updatedEntry;
+        await saveProjectsConfig(config);
+
+        const clearedSessions = clearSessionsForProject(projectId);
+        const updatedProject: Project = {
+            id: newProjectId,
+            gitUrl: cleanUrl,
+            branch: normalizedBranch,
+            path: newPath,
+            accessToken: tokenToPersist,
+            lastUpdated: new Date(),
+            status: 'ready',
+        };
+
+        updatedProject.cachedContent = await createCachedContent(updatedProject);
+        updatedProject.cacheStale = false;
+        projects.delete(projectId);
+        projects.set(updatedProject.id, updatedProject);
+
+        console.log(`[✓] Updated project ${projectId} → ${updatedProject.id} (sessions cleared: ${clearedSessions})`);
+
+        return res.redirect(`/projects/${updatedProject.id}/edit?saved=1`);
+    } catch (error) {
+        console.error('[ERROR] Failed to update project configuration:', error);
+        return res.status(500).send(`<p class="error">Failed to update project: ${error instanceof Error ? escapeHtml(error.message) : 'Unknown error'}</p>`);
+    }
 });
 
 /**
@@ -983,12 +1230,7 @@ app.delete('/api/projects/:projectId', async (req: Request, res: Response) => {
         // Remove from configuration
         await removeProjectFromConfig(projectId, project);
 
-        // Clear all sessions for this project
-        for (const [key] of chatSessions.entries()) {
-            if (key.includes(`:${projectId}:`)) {
-                chatSessions.delete(key);
-            }
-        }
+        clearSessionsForProject(projectId);
 
         // Remove from projects map
         projects.delete(projectId);

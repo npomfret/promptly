@@ -3,72 +3,155 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Promptly - Project Manager</title>
+  <title>Promptly · Control Room</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css">
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 <body>
-  <div class="container">
-    <h1><a href="/" class="site-title">Promptly - AI Project Assistant</a></h1>
+  <main class="page-shell">
+    <header class="hero glass-panel fade-up" data-animate>
+      <p class="eyebrow">Promptly Control Room</p>
+      <h1>Keep projects warm, prompts sharp, and <span>Gemini</span> ready on demand.</h1>
+      <p class="lede">Register repositories, hydrate sessions, and monitor cache health from a single cinematic workspace. Add a project and the watcher takes care of the rest.</p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="#project-form">
+          <i data-lucide="sparkles" class="icon"></i>
+          Add Project
+        </a>
+        <a class="btn btn-secondary" href="/projects">
+          <i data-lucide="list" class="icon"></i>
+          View Projects
+        </a>
+      </div>
+    </header>
 
-    <section>
-      <h2>Add New Project</h2>
-      <form hx-post="/api/projects"
-            hx-target="#project-list"
-            hx-swap="innerHTML"
-            hx-on::after-request="if(event.detail.successful) this.reset()">
-        <div class="form-group">
-          <label for="gitUrl">Git URL</label>
-          <input type="text" id="gitUrl" name="gitUrl" required
-                 placeholder="https://github.com/user/repo.git">
+    <section class="split-grid">
+      <article class="glass-panel fade-up" data-animate data-delay="100" id="project-form">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Onboard</p>
+            <h2>Connect a repository</h2>
+          </div>
         </div>
+        <form hx-post="/api/projects"
+              hx-target="#project-list"
+              hx-swap="innerHTML"
+              hx-on::after-request="if(event.detail.successful) this.reset()">
+          <div class="form-group">
+            <label for="gitUrl">Git URL</label>
+            <input type="text" id="gitUrl" name="gitUrl" placeholder="https://github.com/user/repo.git" required>
+          </div>
+          <div class="form-group">
+            <label for="branch">Branch</label>
+            <input type="text" id="branch" name="branch" value="main" required>
+          </div>
+          <div class="form-group">
+            <label for="accessToken">Personal Access Token (optional for private repos)</label>
+            <input type="password" id="accessToken" name="accessToken" placeholder="ghp_xxxxxxxxxxxx">
+            <small>
+              Token will be embedded in the Git URL.
+              <a href="https://github.com/settings/tokens" target="_blank" rel="noopener">Create token →</a>
+            </small>
+          </div>
+          <div class="button-row" style="justify-content: flex-start;">
+            <button type="submit" class="btn btn-primary">
+              <i data-lucide="plus" class="icon"></i>
+              <span class="htmx-indicator">Adding...</span>
+              <span class="htmx-not-indicator">Add Project</span>
+            </button>
+          </div>
+        </form>
+      </article>
 
-        <div class="form-group">
-          <label for="branch">Branch</label>
-          <input type="text" id="branch" name="branch" value="main" required>
+      <article class="glass-panel fade-up" data-animate data-delay="180">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Vitals</p>
+            <h2>Operational vibes</h2>
+          </div>
         </div>
-
-        <div class="form-group">
-          <label for="accessToken">Personal Access Token (optional for private repos)</label>
-          <input type="password" id="accessToken" name="accessToken"
-                 placeholder="ghp_xxxxxxxxxxxx">
-          <small class="text-muted">
-            Token will be embedded in the Git URL.
-            <a href="https://github.com/settings/tokens" target="_blank" rel="noopener">Create token →</a>
-          </small>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <span class="text-muted">Watcher cadence</span>
+            <strong>60s</strong>
+            <p class="text-muted">Repo updates are scanned every minute to keep cached context fresh.</p>
+          </div>
+          <div class="stat-card">
+            <span class="text-muted">Session Warmth</span>
+            <strong>24h</strong>
+            <p class="text-muted">Sessions stay toasty for a full day before rotating secrets.</p>
+          </div>
+          <div class="stat-card">
+            <span class="text-muted">Cache TTL</span>
+            <strong>3600s</strong>
+            <p class="text-muted">Gemini cached content regenerates automatically when stale.</p>
+          </div>
         </div>
-        <button type="submit" class="btn btn-primary">
-          <i data-lucide="plus" class="icon"></i>
-          <span class="htmx-indicator">Adding...</span>
-          <span class="htmx-not-indicator">Add Project</span>
-        </button>
-      </form>
+      </article>
     </section>
 
-    <section class="mt-3">
-      <h2><i data-lucide="folder-git-2" class="icon"></i> Projects</h2>
-      <div id="project-list" hx-get="/api/projects-table" hx-trigger="load">
-        <p class="text-muted">Loading projects...</p>
+    <section class="glass-panel fade-up" data-animate data-delay="260">
+      <div class="section-header">
+        <div>
+          <p class="eyebrow">API</p>
+          <h2>Usage examples</h2>
+        </div>
+      </div>
+
+      <h3 style="margin-bottom: 1rem; margin-top: 1.5rem;"><i data-lucide="sparkles" class="icon"></i> Enhance Mode</h3>
+      <p class="text-muted" style="margin-bottom: 1rem;">Get AI-powered enhancements and expansions for your prompts</p>
+      <div class="curl-code-container">
+        <pre id="curl-enhance">curl -X POST "http://localhost:3000/enhance?projectId=YOUR_PROJECT_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Let's add Kafka for no apparent reason"}' \
+  -c cookies.txt -b cookies.txt</pre>
+        <button class="btn btn-secondary btn-small copy-btn" onclick="copyCurlCode('curl-enhance', this)">
+          <i data-lucide="copy" class="icon"></i>
+          Copy
+        </button>
+      </div>
+
+      <h3 style="margin-bottom: 1rem; margin-top: 2rem;"><i data-lucide="help-circle" class="icon"></i> Ask Mode</h3>
+      <p class="text-muted" style="margin-bottom: 1rem;">Get critical analysis with probing questions</p>
+      <div class="curl-code-container">
+        <pre id="curl-ask">curl -X POST "http://localhost:3000/ask?projectId=YOUR_PROJECT_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What are the likely implications of adding Kafka when we obviously don't need it?"}' \
+  -c cookies.txt -b cookies.txt</pre>
+        <button class="btn btn-secondary btn-small copy-btn" onclick="copyCurlCode('curl-ask', this)">
+          <i data-lucide="copy" class="icon"></i>
+          Copy
+        </button>
       </div>
     </section>
-  </div>
+  </main>
 
+  <script type="module" src="/js/ui.js"></script>
   <script>
     lucide.createIcons();
-    // Re-create icons after HTMX swaps
     document.body.addEventListener('htmx:afterSwap', () => {
       lucide.createIcons();
     });
 
-    // Toggle system prompt display
-    function togglePrompt(promptId) {
-      const row = document.getElementById(promptId);
-      if (row.style.display === 'none') {
-        row.style.display = 'table-row';
-      } else {
-        row.style.display = 'none';
-      }
+    function copyCurlCode(elementId, buttonEl) {
+      const curlCode = document.getElementById(elementId).textContent;
+      navigator.clipboard.writeText(curlCode).then(() => {
+        const btn = buttonEl || event?.currentTarget;
+        const original = btn.innerHTML;
+        btn.innerHTML = '<i data-lucide="check" class="icon"></i> Copied!';
+        lucide.createIcons();
+        setTimeout(() => {
+          btn.innerHTML = original;
+          lucide.createIcons();
+        }, 2000);
+      }).catch(err => {
+        console.error('Failed to copy:', err);
+        alert('Failed to copy to clipboard');
+      });
     }
   </script>
 </body>

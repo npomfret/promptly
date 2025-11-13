@@ -3,124 +3,136 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Enhance - {{PROJECT_NAME}}</title>
+  <title>Enhance · {{PROJECT_NAME}}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css">
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
 </head>
-<body>
+<body class="chat-body">
   <div class="chat-page">
     <div class="chat-container">
-      <div class="chat-header">
-        <div style="display: flex; align-items: center; gap: 0.75rem;">
-          <a href="/" class="home-icon" title="Back to Projects">
-            <i data-lucide="home" class="icon"></i>
-          </a>
-          <div>
-            <h2>Enhance - {{PROJECT_NAME}}</h2>
-            <p class="text-muted"><i data-lucide="git-branch" class="icon"></i> {{PROJECT_BRANCH}}</p>
+      <section class="chat-shell fade-up" data-animate>
+        <div class="chat-header">
+          <div style="display: flex; gap: 1rem; align-items: center;">
+            <button onclick="window.history.back()" class="home-icon" title="Go Back">
+              <i data-lucide="arrow-left" class="icon"></i>
+            </button>
+            <a href="/" class="home-icon" title="Home">
+              <i data-lucide="home" class="icon"></i>
+            </a>
+            <div>
+              <p class="eyebrow" style="margin-bottom: 0.4rem;">Enhance Mode</p>
+              <h2>{{PROJECT_NAME}}</h2>
+              <p class="text-muted"><i data-lucide="git-branch" class="icon"></i> {{PROJECT_BRANCH}}</p>
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 0.35rem; align-items: flex-end; text-align: right;">
+            <span class="status-badge status-ready">Ready</span>
+            <small class="text-muted">Gemini cache powered</small>
           </div>
         </div>
-      </div>
 
-      <!-- Tabs -->
-      <div class="tabs">
-        <button class="tab-btn active" onclick="switchTab('test')">
-          <i data-lucide="message-circle" class="icon"></i>
-          Enhance
-        </button>
-        <button class="tab-btn" onclick="switchTab('conversation')">
-          <i data-lucide="messages-square" class="icon"></i>
-          History
-        </button>
-        <button class="tab-btn" onclick="switchTab('prompt')">
-          <i data-lucide="file-text" class="icon"></i>
-          System Prompt
-        </button>
-        <button class="tab-btn" onclick="switchTab('api')">
-          <i data-lucide="terminal" class="icon"></i>
-          API
-        </button>
-      </div>
-
-      <!-- Test Tab (Single Request/Response) -->
-      <div id="tab-test" class="tab-content active">
-        <div class="chat-input-container">
-          <form class="chat-input-form"
-                hx-post="/api/chat-message"
-                hx-target="#messages"
-                hx-swap="innerHTML"
-                hx-on::after-request="if(event.detail.successful) { this.reset(); }">
-            <input type="hidden" name="projectId" value="{{PROJECT_ID}}">
-            <textarea name="message"
-                      placeholder="Test your prompt with a question..."
-                      required
-                      autofocus></textarea>
-            <div class="button-row">
-              <button type="submit" class="btn btn-primary">
-                <i data-lucide="send" class="icon"></i>
-                <span class="htmx-indicator">Sending...</span>
-                <span class="htmx-not-indicator">Send</span>
-              </button>
-            </div>
-          </form>
+        <div class="tabs">
+          <button class="tab-btn active" onclick="switchTab(this, 'test')">
+            <i data-lucide="message-circle" class="icon"></i>
+            Enhance
+          </button>
+          <button class="tab-btn" onclick="switchTab(this, 'conversation')">
+            <i data-lucide="messages-square" class="icon"></i>
+            History
+          </button>
+          <button class="tab-btn" onclick="switchTab(this, 'prompt')">
+            <i data-lucide="file-text" class="icon"></i>
+            System Prompt
+          </button>
+          <button class="tab-btn" onclick="switchTab(this, 'api')">
+            <i data-lucide="terminal" class="icon"></i>
+            API
+          </button>
         </div>
-        <div class="chat-messages" id="messages">
-          <p class="text-muted">Enhance your prompts with AI-powered suggestions.</p>
-        </div>
-      </div>
 
-      <!-- Conversation Tab (Full History) -->
-      <div id="tab-conversation" class="tab-content">
-        <div class="chat-messages" id="conversation-messages"
-             hx-get="/api/project-history?projectId={{PROJECT_ID}}&mode=enhance"
-             hx-trigger="load">
-          <p class="text-muted">Loading enhance history...</p>
+        <div id="tab-test" class="tab-content active">
+          <div class="chat-input-container">
+            <form class="chat-input-form"
+                  hx-post="/api/chat-message"
+                  hx-target="#messages"
+                  hx-swap="innerHTML"
+                  hx-on::after-request="if(event.detail.successful) { this.reset(); }">
+              <input type="hidden" name="projectId" value="{{PROJECT_ID}}">
+              <textarea name="message"
+                        placeholder="Test your prompt with a question..."
+                        required
+                        autofocus
+                        data-auto-resize></textarea>
+              <div class="button-row">
+                <button type="submit" class="btn btn-primary">
+                  <i data-lucide="send" class="icon"></i>
+                  <span class="htmx-indicator">Sending...</span>
+                  <span class="htmx-not-indicator">Send</span>
+                </button>
+              </div>
+            </form>
+          </div>
+          <div class="chat-messages" id="messages">
+            <p class="text-muted">Enhance your prompts with AI-powered suggestions.</p>
+          </div>
         </div>
-      </div>
 
-      <!-- System Prompt Tab -->
-      <div id="tab-prompt" class="tab-content">
-        <div class="prompt-viewer">
-          <div class="prompt-content markdown-content">{{SYSTEM_PROMPT}}</div>
+        <div id="tab-conversation" class="tab-content">
+          <div class="chat-messages" id="conversation-messages"
+               hx-get="/api/project-history?projectId={{PROJECT_ID}}&mode=enhance"
+               hx-trigger="load">
+            <p class="text-muted">Loading enhance history...</p>
+          </div>
         </div>
-      </div>
 
-      <!-- API Tab -->
-      <div id="tab-api" class="tab-content">
-        <div class="curl-example">
-          <h3><i data-lucide="terminal" class="icon"></i> API Example (curl)</h3>
-          <div class="curl-code-container">
-            <pre id="curl-code">curl -X POST "http://localhost:3000/enhance?projectId={{PROJECT_ID}}" \
+        <div id="tab-prompt" class="tab-content">
+          <div class="prompt-viewer">
+            <div class="prompt-content markdown-content">{{SYSTEM_PROMPT}}</div>
+          </div>
+        </div>
+
+        <div id="tab-api" class="tab-content">
+          <div class="curl-example">
+            <h3><i data-lucide="terminal" class="icon"></i> API Example (curl)</h3>
+            <div class="curl-code-container">
+              <pre id="curl-code">curl -X POST "http://localhost:3000/enhance?projectId={{PROJECT_ID}}" \
   -H "Content-Type: application/json" \
   -d '{"message": "What is the project about?"}' \
   -c cookies.txt -b cookies.txt</pre>
-            <button class="btn btn-secondary btn-small copy-btn" onclick="copyCurl()">
-              <i data-lucide="copy" class="icon"></i>
-              Copy
-            </button>
+              <button class="btn btn-secondary btn-small copy-btn" onclick="copyCurl(this)">
+                <i data-lucide="copy" class="icon"></i>
+                Copy
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      </section>
     </div>
   </div>
 
+  <script type="module" src="/js/ui.js"></script>
   <script>
-    // Initialize Lucide icons
     lucide.createIcons();
 
-    // Re-create icons after HTMX swaps
     document.body.addEventListener('htmx:afterSwap', () => {
       lucide.createIcons();
+      const messages = document.getElementById('messages');
+      if (messages) {
+        messages.scrollTop = messages.scrollHeight;
+      }
     });
 
-    // Auto-scroll to bottom on load
     window.addEventListener('load', () => {
       const messages = document.getElementById('messages');
-      messages.scrollTop = messages.scrollHeight;
+      if (messages) {
+        messages.scrollTop = messages.scrollHeight;
+      }
     });
 
-    // Submit form on Enter (without Shift)
     document.addEventListener('DOMContentLoaded', () => {
       const textarea = document.querySelector('.chat-input-form textarea');
       if (textarea) {
@@ -136,38 +148,26 @@
       }
     });
 
-    // Switch tabs
-    function switchTab(tabName) {
-      // Hide all tab contents
-      document.querySelectorAll('.tab-content').forEach(tab => {
-        tab.classList.remove('active');
-      });
-
-      // Remove active from all tab buttons
-      document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.remove('active');
-      });
-
-      // Show selected tab
-      document.getElementById(`tab-${tabName}`).classList.add('active');
-
-      // Add active to clicked button
-      event.target.closest('.tab-btn').classList.add('active');
-
-      // Re-initialize icons
+    function switchTab(button, tabName) {
+      document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      const target = document.getElementById(`tab-${tabName}`);
+      if (target) {
+        target.classList.add('active');
+      }
+      (button || event?.currentTarget)?.classList.add('active');
       lucide.createIcons();
     }
 
-    // Copy curl command to clipboard
-    function copyCurl() {
+    function copyCurl(buttonEl) {
       const curlCode = document.getElementById('curl-code').textContent;
       navigator.clipboard.writeText(curlCode).then(() => {
-        const btn = event.target;
-        const originalText = btn.innerHTML;
+        const btn = buttonEl || event?.currentTarget;
+        const original = btn.innerHTML;
         btn.innerHTML = '<i data-lucide="check" class="icon"></i> Copied!';
         lucide.createIcons();
         setTimeout(() => {
-          btn.innerHTML = originalText;
+          btn.innerHTML = original;
           lucide.createIcons();
         }, 2000);
       }).catch(err => {
