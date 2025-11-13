@@ -668,12 +668,13 @@ function generateProjectsTable(): string {
 /**
  * Helper function to generate HTML messages with markdown rendering
  */
-function generateMessageHTML(role: 'user' | 'model', message: string, timestamp: Date, sessionId?: string): string {
+function generateMessageHTML(role: 'user' | 'model', message: string, timestamp: Date, sessionId?: string, mode?: 'enhance' | 'ask'): string {
     const sessionInfo = sessionId ? ` <span style="opacity: 0.5;">• ${sessionId.substring(0, 8)}</span>` : '';
+    const modeInfo = mode ? ` <span class="mode-badge mode-${mode}">${mode === 'enhance' ? 'Enhance' : 'Ask'}</span>` : '';
     return `
     <div class="message ${role}">
       <div class="message-content">${md.render(message)}</div>
-      <div class="message-time">${new Date(timestamp).toLocaleTimeString()}${sessionInfo}</div>
+      <div class="message-time">${new Date(timestamp).toLocaleTimeString()}${sessionInfo}${modeInfo}</div>
     </div>
   `;
 }
@@ -1169,6 +1170,7 @@ app.get('/api/project-history', (req: Request, res: Response) => {
             request: string;
             response: string;
             sessionId: string;
+            mode: 'enhance' | 'ask';
         }> = [];
 
         for (const file of files) {
@@ -1180,6 +1182,7 @@ app.get('/api/project-history', (req: Request, res: Response) => {
                     request: entry.request,
                     response: entry.response,
                     sessionId: entry.sessionId,
+                    mode: entry.mode || 'enhance',
                 });
             } catch (error) {
                 console.error(`[ERROR] Failed to read history file ${file}:`, error);
@@ -1193,8 +1196,8 @@ app.get('/api/project-history', (req: Request, res: Response) => {
         // Generate HTML
         const messagesHTML = recentEntries
             .map(entry => {
-                const userHTML = generateMessageHTML('user', entry.request, entry.timestamp, entry.sessionId);
-                const modelHTML = generateMessageHTML('model', entry.response, entry.timestamp, entry.sessionId);
+                const userHTML = generateMessageHTML('user', entry.request, entry.timestamp, entry.sessionId, entry.mode);
+                const modelHTML = generateMessageHTML('model', entry.response, entry.timestamp, entry.sessionId, entry.mode);
                 return userHTML + modelHTML;
             })
             .join('');

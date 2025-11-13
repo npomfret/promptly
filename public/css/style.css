@@ -944,3 +944,25 @@ html {
   cursor: not-allowed;
   pointer-events: none;
 }
+
+/* Mode badges in message timestamps */
+.mode-badge {
+  display: inline-block;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  margin-left: 0.5rem;
+  letter-spacing: 0.05em;
+}
+
+.mode-enhance {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.mode-ask {
+  background: #fef3c7;
+  color: #92400e;
+}
