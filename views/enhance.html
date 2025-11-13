@@ -16,7 +16,7 @@
     <div class="chat-container">
       <section class="chat-shell fade-up" data-animate>
         <div class="chat-header">
-          <div style="display: flex; gap: 1rem; align-items: center;">
+          <div class="flex gap-md align-center flex-wrap">
             <button onclick="window.history.back()" class="home-icon" title="Go Back">
               <i data-lucide="arrow-left" class="icon"></i>
             </button>
@@ -24,12 +24,12 @@
               <i data-lucide="home" class="icon"></i>
             </a>
             <div>
-              <p class="eyebrow" style="margin-bottom: 0.4rem;">Enhance Mode</p>
+              <p class="eyebrow tight">Enhance Mode</p>
               <h2>{{PROJECT_NAME}}</h2>
               <p class="text-muted"><i data-lucide="git-branch" class="icon"></i> {{PROJECT_BRANCH}}</p>
             </div>
           </div>
-          <div style="display: flex; flex-direction: column; gap: 0.35rem; align-items: flex-end; text-align: right;">
+          <div class="flex flex-column gap-xs align-end text-right">
             <span class="status-badge status-ready">Ready</span>
             <small class="text-muted">Gemini cache powered</small>
           </div>

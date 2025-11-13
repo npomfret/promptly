@@ -99,6 +99,10 @@ body.chat-body {
   margin-bottom: 0.75rem;
 }
 
+.eyebrow.tight {
+  margin-bottom: 0.35rem;
+}
+
 .lede {
   max-width: 60ch;
   color: var(--text-muted);
@@ -194,6 +198,31 @@ body.chat-body {
 .section-header h2 {
   font-size: clamp(1.5rem, 3vw, 2.25rem);
 }
+
+.subheading {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+/* Utility helpers */
+.flex { display: flex; }
+.flex-column { flex-direction: column; }
+.flex-wrap { flex-wrap: wrap; }
+.flex-1 { flex: 1; }
+.align-center { align-items: center; }
+.align-start { align-items: flex-start; }
+.align-end { align-items: flex-end; }
+.gap-xs { gap: 0.35rem; }
+.gap-md { gap: 1rem; }
+.mb-md { margin-bottom: 1rem; }
+.mt-md { margin-top: 1.5rem; }
+.mt-lg { margin-top: 2rem; }
+.text-right { text-align: right; }
+.text-faint { opacity: 0.55; }
+.is-hidden { display: none !important; }
 
 /* Form styles */
 .form-group {
@@ -404,7 +433,6 @@ tbody td a:hover {
 
 /* Text utilities */
 .text-muted { color: var(--text-muted); }
-.mt-3 { margin-top: 3rem; }
 .error {
   color: var(--danger);
   background: rgba(248, 113, 113, 0.1);
@@ -578,6 +606,10 @@ tbody td a:hover {
   justify-content: flex-end;
 }
 
+.button-row.align-start {
+  justify-content: flex-start;
+}
+
 .chat-messages {
   max-height: 55vh;
   overflow-y: auto;
@@ -709,6 +741,11 @@ tbody td a:hover {
   .hero-actions,
   .section-header { flex-direction: column; align-items: flex-start; }
   .tabs { justify-content: center; }
-  .button-row { justify-content: stretch; }
+  .button-row {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 0.75rem;
+  }
   .button-row .btn { width: 100%; }
 }

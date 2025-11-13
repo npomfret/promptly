@@ -670,7 +670,7 @@ function generateProjectsTable(): string {
         </button>
       </td>
     </tr>
-    <tr id="${promptId}" class="prompt-row" style="display: none;">
+    <tr id="${promptId}" class="prompt-row is-hidden">
       <td colspan="5">
         <div class="prompt-container">
           <h3>System Prompt</h3>
@@ -737,7 +737,7 @@ function renderProjectEditPage(project: Project, flashHtml: string = ''): string
  * Helper function to generate HTML messages with markdown rendering
  */
 function generateMessageHTML(role: 'user' | 'model', message: string, timestamp: Date, sessionId?: string, mode?: 'enhance' | 'ask'): string {
-    const sessionInfo = sessionId ? ` <span style="opacity: 0.5;">• ${sessionId.substring(0, 8)}</span>` : '';
+    const sessionInfo = sessionId ? ` <span class="text-faint">• ${sessionId.substring(0, 8)}</span>` : '';
     const modeInfo = mode ? ` <span class="mode-badge mode-${mode}">${mode === 'enhance' ? 'Enhance' : 'Ask'}</span>` : '';
     return `
     <div class="message ${role}">

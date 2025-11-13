@@ -57,7 +57,7 @@
               <a href="https://github.com/settings/tokens" target="_blank" rel="noopener">Create token →</a>
             </small>
           </div>
-          <div class="button-row" style="justify-content: flex-start;">
+          <div class="button-row align-start">
             <button type="submit" class="btn btn-primary">
               <i data-lucide="plus" class="icon"></i>
               <span class="htmx-indicator">Adding...</span>
@@ -102,8 +102,8 @@
         </div>
       </div>
 
-      <h3 style="margin-bottom: 1rem; margin-top: 1.5rem;"><i data-lucide="sparkles" class="icon"></i> Enhance Mode</h3>
-      <p class="text-muted" style="margin-bottom: 1rem;">Get AI-powered enhancements and expansions for your prompts</p>
+      <h3 class="subheading mb-md mt-md"><i data-lucide="sparkles" class="icon"></i> Enhance Mode</h3>
+      <p class="text-muted mb-md">Get AI-powered enhancements and expansions for your prompts</p>
       <div class="curl-code-container">
         <pre id="curl-enhance">curl -X POST "http://localhost:3000/enhance?projectId=YOUR_PROJECT_ID" \
   -H "Content-Type: application/json" \
@@ -115,8 +115,8 @@
         </button>
       </div>
 
-      <h3 style="margin-bottom: 1rem; margin-top: 2rem;"><i data-lucide="help-circle" class="icon"></i> Ask Mode</h3>
-      <p class="text-muted" style="margin-bottom: 1rem;">Get critical analysis with probing questions</p>
+      <h3 class="subheading mb-md mt-lg"><i data-lucide="help-circle" class="icon"></i> Ask Mode</h3>
+      <p class="text-muted mb-md">Get critical analysis with probing questions</p>
       <div class="curl-code-container">
         <pre id="curl-ask">curl -X POST "http://localhost:3000/ask?projectId=YOUR_PROJECT_ID" \
   -H "Content-Type: application/json" \
