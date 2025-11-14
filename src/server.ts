@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { GoogleAICacheManager } from '@google/generative-ai/server';
 import { execSync } from 'child_process';
+import type { DecodedIdToken } from 'firebase-admin/auth';
 import dotenv from 'dotenv';
 import express, { NextFunction, Request, Response } from 'express';
 import session from 'express-session';
@@ -19,6 +20,8 @@ import {
     removeProject as removeProjectFromConfig,
     saveProjectsConfig,
 } from './projectManager.js';
+import type { AuthedRequest } from './auth.js';
+import { getFirebaseClientConfig, requireAuth } from './auth.js';
 import { startWatching } from './repoWatcher.js';
 import type {
     AddProjectRequest,
@@ -206,6 +209,8 @@ const SESSION_SECRET = process.env.SESSION_SECRET || `gemini-session-secret-${uu
 const SESSION_MAX_AGE = 24 * 60 * 60 * 1000; // 24 hours
 const CLEANUP_INTERVAL = 60 * 60 * 1000; // 1 hour
 const REPO_CHECK_INTERVAL = 1; // Check for repo updates every 1 minute
+const PROJECT_RATE_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+const PROJECT_RATE_LIMIT = 3;
 
 // Validation
 if (!API_KEY) {
@@ -254,6 +259,41 @@ const projects = new Map<string, Project>();
 // Store for long-lived chat sessions (key: sessionId:projectId)
 const chatSessions = new Map<string, SessionData>();
 
+const projectAddAttempts = new Map<string, number[]>();
+
+function getClientIp(req: Request): string {
+    const forwarded = req.headers['x-forwarded-for'];
+    if (typeof forwarded === 'string' && forwarded.length > 0) {
+        return forwarded.split(',')[0].trim();
+    }
+    if (Array.isArray(forwarded) && forwarded.length > 0) {
+        return forwarded[0];
+    }
+    return req.socket.remoteAddress || req.ip || 'unknown';
+}
+
+function enforceProjectRateLimit(req: Request, res: Response, next: NextFunction): void {
+    const ip = getClientIp(req);
+    const now = Date.now();
+    const attempts = projectAddAttempts.get(ip) ?? [];
+    const recentAttempts = attempts.filter(timestamp => now - timestamp < PROJECT_RATE_WINDOW_MS);
+
+    if (recentAttempts.length >= PROJECT_RATE_LIMIT) {
+        const message = 'Too many project registrations from this IP. Try again in a few minutes.';
+        const acceptsHtml = typeof req.headers.accept === 'string' && req.headers.accept.includes('text/html');
+        if (acceptsHtml) {
+            res.status(429).send(`<p class="error">${escapeHtml(message)}</p>`);
+            return;
+        }
+        res.status(429).json({ error: message });
+        return;
+    }
+
+    recentAttempts.push(now);
+    projectAddAttempts.set(ip, recentAttempts);
+    next();
+}
+
 /**
  * Create or refresh cached content with project context for a specific project
  */
@@ -298,6 +338,10 @@ app.use(express.static(join(__dirname, '..', 'public')));
 // Pretty-print JSON responses
 app.set('json spaces', 2);
 
+app.get('/config/firebase', (_req: Request, res: Response) => {
+    res.json(getFirebaseClientConfig());
+});
+
 app.use(
     session({
         secret: SESSION_SECRET,
@@ -314,7 +358,22 @@ app.use(
 declare module 'express-session' {
     interface SessionData {
         id: string;
+        firebaseUser?: DecodedIdToken;
     }
+}
+
+function requireSessionUser(req: Request, res: Response, next: NextFunction): void {
+    if (req.session?.firebaseUser) {
+        next();
+        return;
+    }
+
+    if (req.accepts('html')) {
+        res.redirect('/?auth=required');
+        return;
+    }
+
+    res.status(401).json({ error: 'Authentication required' });
 }
 
 /**
@@ -767,6 +826,13 @@ function escapeHtml(text: string): string {
         .replace(/\n/g, '<br>');
 }
 
+function resolveNextUrl(input: unknown): string {
+    if (typeof input === 'string' && input.startsWith('/') && !input.startsWith('//')) {
+        return input;
+    }
+    return '/';
+}
+
 function clearSessionsForProject(projectId: string): number {
     let clearedCount = 0;
     for (const key of chatSessions.keys()) {
@@ -792,15 +858,42 @@ app.get('/', (_req: Request, res: Response) => {
     res.sendFile(indexPath);
 });
 
+app.get('/login', (req: Request, res: Response) => {
+    if (req.session?.firebaseUser) {
+        return res.redirect(resolveNextUrl(req.query.next));
+    }
+    const loginPath = join(__dirname, '..', 'views', 'login.html');
+    res.sendFile(loginPath);
+});
+
+app.get('/register', (req: Request, res: Response) => {
+    if (req.session?.firebaseUser) {
+        return res.redirect(resolveNextUrl(req.query.next));
+    }
+    const registerPath = join(__dirname, '..', 'views', 'register.html');
+    res.sendFile(registerPath);
+});
+
 /**
  * Serve the projects list page
  */
-app.get('/projects', (_req: Request, res: Response) => {
+app.get('/projects', (req: Request, res: Response, next: NextFunction) => {
+    const acceptsHtml = typeof req.headers.accept === 'string' && req.headers.accept.toLowerCase().includes('text/html');
+    if (!acceptsHtml) {
+        next();
+        return;
+    }
+
+    if (!req.session?.firebaseUser) {
+        res.redirect('/?auth=required');
+        return;
+    }
+
     const projectsPath = join(__dirname, '..', 'views', 'projects.html');
     res.sendFile(projectsPath);
 });
 
-app.get('/projects/:projectId/edit', (req: Request, res: Response) => {
+app.get('/projects/:projectId/edit', requireSessionUser, (req: Request, res: Response) => {
     const { projectId } = req.params;
     const project = projects.get(projectId);
 
@@ -825,7 +918,7 @@ app.get('/projects/:projectId/edit', (req: Request, res: Response) => {
     res.send(editPage);
 });
 
-app.post('/projects/:projectId/edit', async (req: Request, res: Response) => {
+app.post('/projects/:projectId/edit', requireSessionUser, async (req: Request, res: Response) => {
     try {
         const { projectId } = req.params;
         const project = projects.get(projectId);
@@ -963,7 +1056,7 @@ app.post('/projects/:projectId/edit', async (req: Request, res: Response) => {
 /**
  * Serve the chat page for a specific project
  */
-app.get('/enhance/:projectId', (req: Request, res: Response) => {
+app.get('/enhance/:projectId', requireSessionUser, (req: Request, res: Response) => {
     const { projectId } = req.params;
     const project = projects.get(projectId);
 
@@ -1069,7 +1162,7 @@ app.get('/enhance/:projectId', (req: Request, res: Response) => {
 /**
  * Serve the ask page for a specific project
  */
-app.get('/ask/:projectId', (req: Request, res: Response) => {
+app.get('/ask/:projectId', requireSessionUser, (req: Request, res: Response) => {
     const { projectId } = req.params;
     const project = projects.get(projectId);
 
@@ -1172,6 +1265,37 @@ app.get('/ask/:projectId', (req: Request, res: Response) => {
     res.send(askHTML);
 });
 
+// ============================================================================
+// API Authentication Boundary
+// ============================================================================
+
+app.use('/api', requireAuth);
+
+app.post('/api/auth/session', (req: Request, res: Response) => {
+    const user = (req as AuthedRequest).user;
+    res.json({
+        success: true,
+        user: {
+            uid: user.uid,
+            email: user.email,
+            name: user.name,
+        },
+    });
+});
+
+app.delete('/api/auth/session', (req: Request, res: Response) => {
+    req.session.regenerate(error => {
+        if (error) {
+            console.error('[AUTH] Failed to clear session:', error);
+            return res.status(500).json({ error: 'Failed to clear session' });
+        }
+
+        res.json({
+            success: true,
+        });
+    });
+});
+
 /**
  * HTMX: Get projects table HTML
  */
@@ -1182,7 +1306,7 @@ app.get('/api/projects-table', (_req: Request, res: Response) => {
 /**
  * HTMX: Add project and return updated table
  */
-app.post('/api/projects', async (req: Request, res: Response) => {
+app.post('/api/projects', enforceProjectRateLimit, async (req: Request, res: Response) => {
     try {
         const { gitUrl, branch, accessToken } = req.body;
 
@@ -1509,7 +1633,7 @@ app.get('/health', (_req: Request, res: Response<HealthResponse>) => {
 /**
  * Get current session information
  */
-app.get('/session', (req: Request, res: Response<SessionInfoResponse | ErrorResponse>) => {
+app.get('/session', requireAuth, (req: Request, res: Response<SessionInfoResponse | ErrorResponse>) => {
     const sessionId = req.session.id;
     const projectId = req.query.projectId as string;
     const mode = (req.query.mode as 'enhance' | 'ask') || 'enhance';
@@ -1535,7 +1659,7 @@ app.get('/session', (req: Request, res: Response<SessionInfoResponse | ErrorResp
 /**
  * Clear the current session
  */
-app.post('/session/clear', (req: Request, res: Response<ClearSessionResponse | ErrorResponse>) => {
+app.post('/session/clear', requireAuth, (req: Request, res: Response<ClearSessionResponse | ErrorResponse>) => {
     const sessionId = req.session.id;
     const projectId = req.query.projectId as string;
     const mode = req.query.mode as string;
@@ -1578,7 +1702,7 @@ app.post('/session/clear', (req: Request, res: Response<ClearSessionResponse | E
 /**
  * Refresh cached content for a specific project
  */
-app.post('/cache/refresh', async (req: Request, res: Response<CacheRefreshResponse | ErrorResponse>) => {
+app.post('/cache/refresh', requireAuth, async (req: Request, res: Response<CacheRefreshResponse | ErrorResponse>) => {
     try {
         const projectId = req.query.projectId as string;
 
@@ -1628,7 +1752,7 @@ app.post('/cache/refresh', async (req: Request, res: Response<CacheRefreshRespon
 /**
  * Main chat endpoint - send message to Gemini
  */
-app.post('/enhance', async (req: Request<{}, ChatResponse | ErrorResponse, ChatRequest>, res: Response<ChatResponse | ErrorResponse>) => {
+app.post('/enhance', requireAuth, async (req: Request<{}, ChatResponse | ErrorResponse, ChatRequest>, res: Response<ChatResponse | ErrorResponse>) => {
     try {
         const { message } = req.body;
         const projectId = req.query.projectId as string;
@@ -1720,7 +1844,7 @@ app.post('/enhance', async (req: Request<{}, ChatResponse | ErrorResponse, ChatR
 /**
  * Ask endpoint - send question to critical thinking AI
  */
-app.post('/ask', async (req: Request<{}, ChatResponse | ErrorResponse, ChatRequest>, res: Response<ChatResponse | ErrorResponse>) => {
+app.post('/ask', requireAuth, async (req: Request<{}, ChatResponse | ErrorResponse, ChatRequest>, res: Response<ChatResponse | ErrorResponse>) => {
     try {
         const { message } = req.body;
         const projectId = req.query.projectId as string;
@@ -1801,7 +1925,7 @@ app.post('/ask', async (req: Request<{}, ChatResponse | ErrorResponse, ChatReque
 /**
  * Get chat history for current session
  */
-app.get('/history', (req: Request, res: Response<HistoryResponse | ErrorResponse>) => {
+app.get('/history', requireAuth, (req: Request, res: Response<HistoryResponse | ErrorResponse>) => {
     const sessionId = req.session.id;
     const projectId = req.query.projectId as string;
     const mode = (req.query.mode as 'enhance' | 'ask') || 'enhance';
@@ -1833,7 +1957,7 @@ app.get('/history', (req: Request, res: Response<HistoryResponse | ErrorResponse
 /**
  * List all configured projects
  */
-app.get('/projects', (_req: Request, res: Response<ProjectsListResponse>) => {
+app.get('/projects', requireAuth, (_req: Request, res: Response<ProjectsListResponse>) => {
     const projectList: ProjectInfo[] = Array.from(projects.values()).map(p => ({
         id: p.id,
         gitUrl: p.gitUrl,
@@ -1850,7 +1974,7 @@ app.get('/projects', (_req: Request, res: Response<ProjectsListResponse>) => {
 /**
  * Add a new project
  */
-app.post('/projects', async (req: Request<{}, AddProjectResponse | ErrorResponse, AddProjectRequest>, res: Response<AddProjectResponse | ErrorResponse>) => {
+app.post('/projects', requireAuth, enforceProjectRateLimit, async (req: Request<{}, AddProjectResponse | ErrorResponse, AddProjectRequest>, res: Response<AddProjectResponse | ErrorResponse>) => {
     try {
         const { gitUrl, branch, accessToken } = req.body;
 
@@ -1902,7 +2026,7 @@ app.post('/projects', async (req: Request<{}, AddProjectResponse | ErrorResponse
 /**
  * Remove a project
  */
-app.delete('/projects/:projectId', async (req: Request, res: Response<RemoveProjectResponse | ErrorResponse>) => {
+app.delete('/projects/:projectId', requireAuth, async (req: Request, res: Response<RemoveProjectResponse | ErrorResponse>) => {
     try {
         const { projectId } = req.params;
 
@@ -1943,7 +2067,7 @@ app.delete('/projects/:projectId', async (req: Request, res: Response<RemoveProj
 /**
  * Shutdown endpoint - gracefully stop the server
  */
-app.post('/shutdown', (_req: Request, res: Response) => {
+app.post('/shutdown', requireAuth, (_req: Request, res: Response) => {
     console.log('[...] Shutdown requested');
 
     res.json({
@@ -2002,6 +2126,8 @@ Projects loaded: ${projects.size}
 
 Endpoints:
   GET    /health                - Health check and server status
+  POST   /api/auth/session      - Sync Firebase ID token into an Express session
+  DELETE /api/auth/session      - Clear the current Express session
   GET    /projects              - List all projects
   POST   /projects              - Add new project
   DELETE /projects/:projectId   - Remove project
@@ -2011,6 +2137,8 @@ Endpoints:
   POST   /session/clear?projectId=ID - Clear current session
   POST   /cache/refresh?projectId=ID - Refresh project context cache
   POST   /shutdown              - Gracefully shutdown the server
+
+Authentication: Firebase ID token via Authorization: Bearer header (or a signed-in browser session)
 
 Session configuration:
   - Max age: ${SESSION_MAX_AGE / (60 * 60 * 1000)} hours

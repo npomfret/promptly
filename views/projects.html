@@ -11,7 +11,7 @@
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
 </head>
-<body>
+<body data-require-auth="true">
   <main class="page-shell">
     <header class="hero glass-panel fade-up" data-animate>
       <div class="flex align-start gap-md flex-wrap mb-md">
@@ -30,12 +30,16 @@
     </header>
 
     <section class="glass-panel fade-up" data-animate data-delay="100">
-      <div id="project-list" hx-get="/api/projects-table" hx-trigger="load">
+      <div id="project-list"
+           hx-get="/api/projects-table"
+           hx-trigger="load, promptly-auth"
+           data-auth-retry="auto">
         <p class="text-muted">Loading projects...</p>
       </div>
     </section>
   </main>
 
+  <script type="module" src="/js/auth.js"></script>
   <script type="module" src="/js/ui.js"></script>
   <script>
     lucide.createIcons();

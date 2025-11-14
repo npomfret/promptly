@@ -124,6 +124,7 @@ scp -r \
     prompts \
     views \
     public \
+    config \
     package.json \
     package-lock.json \
     tsconfig.json \

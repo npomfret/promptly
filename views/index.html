@@ -26,6 +26,10 @@
           <i data-lucide="list" class="icon"></i>
           View Projects
         </a>
+        <a class="btn btn-secondary" href="/login">
+          <i data-lucide="log-in" class="icon"></i>
+          Email Login
+        </a>
       </div>
     </header>
 
@@ -40,7 +44,8 @@
         <form hx-post="/api/projects"
               hx-target="#project-list"
               hx-swap="innerHTML"
-              hx-on::after-request="if(event.detail.successful) this.reset()">
+              hx-on::after-request="if(event.detail.successful) this.reset()"
+              data-auth-guard="true">
           <div class="form-group">
             <label for="gitUrl">Git URL</label>
             <input type="text" id="gitUrl" name="gitUrl" placeholder="https://github.com/user/repo.git" required>
@@ -107,6 +112,7 @@
       <div class="curl-code-container">
         <pre id="curl-enhance">curl -X POST "http://localhost:3000/enhance?projectId=YOUR_PROJECT_ID" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $FIREBASE_ID_TOKEN" \
   -d '{"message": "Let's add Kafka for no apparent reason"}' \
   -c cookies.txt -b cookies.txt</pre>
         <button class="btn btn-secondary btn-small copy-btn" onclick="copyCurlCode('curl-enhance', this)">
@@ -120,6 +126,7 @@
       <div class="curl-code-container">
         <pre id="curl-ask">curl -X POST "http://localhost:3000/ask?projectId=YOUR_PROJECT_ID" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $FIREBASE_ID_TOKEN" \
   -d '{"message": "What are the likely implications of adding Kafka when we obviously don't need it?"}' \
   -c cookies.txt -b cookies.txt</pre>
         <button class="btn btn-secondary btn-small copy-btn" onclick="copyCurlCode('curl-ask', this)">
@@ -130,11 +137,23 @@
     </section>
   </main>
 
+  <script type="module" src="/js/auth.js"></script>
   <script type="module" src="/js/ui.js"></script>
   <script>
     lucide.createIcons();
     document.body.addEventListener('htmx:afterSwap', () => {
       lucide.createIcons();
+    });
+
+    document.body.addEventListener('htmx:responseError', (event) => {
+      if (!event.detail || !event.detail.xhr) return;
+      if (event.detail.xhr.status === 401) {
+        const guardedForm = event.detail.elt?.closest('[data-auth-guard=\"true\"]');
+        if (guardedForm) {
+          const next = encodeURIComponent(window.location.pathname + window.location.search + window.location.hash);
+          window.location.href = `/login?next=${next}`;
+        }
+      }
     });
 
     function copyCurlCode(elementId, buttonEl) {

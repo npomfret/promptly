@@ -11,7 +11,7 @@
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
 </head>
-<body class="chat-body">
+<body class="chat-body" data-require-auth="true">
   <div class="chat-page">
     <div class="chat-container">
       <section class="chat-shell fade-up" data-animate>
@@ -84,7 +84,8 @@
         <div id="tab-conversation" class="tab-content">
           <div class="chat-messages" id="conversation-messages"
                hx-get="/api/project-history?projectId={{PROJECT_ID}}&mode=enhance"
-               hx-trigger="load">
+               hx-trigger="load, promptly-auth"
+               data-auth-retry="auto">
             <p class="text-muted">Loading enhance history...</p>
           </div>
         </div>
@@ -101,6 +102,7 @@
             <div class="curl-code-container">
               <pre id="curl-code">curl -X POST "http://localhost:3000/enhance?projectId={{PROJECT_ID}}" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $FIREBASE_ID_TOKEN" \
   -d '{"message": "What is the project about?"}' \
   -c cookies.txt -b cookies.txt</pre>
               <button class="btn btn-secondary btn-small copy-btn" onclick="copyCurl(this)">
@@ -114,6 +116,7 @@
     </div>
   </div>
 
+  <script type="module" src="/js/auth.js"></script>
   <script type="module" src="/js/ui.js"></script>
   <script>
     lucide.createIcons();
