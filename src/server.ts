@@ -346,10 +346,12 @@ app.use(
     session({
         secret: SESSION_SECRET,
         resave: false,
-        saveUninitialized: true,
+        saveUninitialized: false, // Don't save empty sessions
         cookie: {
             secure: false, // Set to true if using HTTPS
+            httpOnly: true,
             maxAge: SESSION_MAX_AGE,
+            sameSite: 'lax',
         },
     }),
 );
@@ -851,7 +853,7 @@ function clearSessionsForProject(projectId: string): number {
 // ============================================================================
 
 /**
- * Serve the main project list page
+ * Serve the main dashboard page (public, but functionality requires auth)
  */
 app.get('/', (_req: Request, res: Response) => {
     const indexPath = join(__dirname, '..', 'views', 'index.html');
@@ -885,7 +887,8 @@ app.get('/projects', (req: Request, res: Response, next: NextFunction) => {
     }
 
     if (!req.session?.firebaseUser) {
-        res.redirect('/?auth=required');
+        const next = encodeURIComponent('/projects');
+        res.redirect(`/login?next=${next}`);
         return;
     }
 
@@ -1273,13 +1276,27 @@ app.use('/api', requireAuth);
 
 app.post('/api/auth/session', (req: Request, res: Response) => {
     const user = (req as AuthedRequest).user;
-    res.json({
-        success: true,
-        user: {
-            uid: user.uid,
-            email: user.email,
-            name: user.name,
-        },
+    console.log('[DEBUG] POST /api/auth/session - Session ID:', req.sessionID);
+    console.log('[DEBUG] POST /api/auth/session - User:', user.email);
+
+    // Explicitly save session to ensure it persists
+    req.session.save((err) => {
+        if (err) {
+            console.error('[AUTH] Failed to save session:', err);
+            return res.status(500).json({ error: 'Failed to save session' });
+        }
+
+        console.log('[DEBUG] POST /api/auth/session - Session saved successfully');
+        console.log('[DEBUG] POST /api/auth/session - firebaseUser set:', !!req.session.firebaseUser);
+
+        res.json({
+            success: true,
+            user: {
+                uid: user.uid,
+                email: user.email,
+                name: user.name,
+            },
+        });
     });
 });
 

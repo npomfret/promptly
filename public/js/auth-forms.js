@@ -135,8 +135,8 @@ form.addEventListener('submit', async (event) => {
     }
 
     if (mode === 'register') {
-      if (password.length < 8) {
-        setError('Password should be at least 8 characters.');
+      if (password.length < 12) {
+        setError('Password should be at least 12 characters.');
         setBusy(false);
         return;
       }

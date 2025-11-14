@@ -8,17 +8,22 @@ import type { NextFunction, Request, Response } from 'express';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const serviceAccountPath = join(__dirname, '..', 'config', 'private', 'serviceAccountKey.json');
+const firebaseWebConfigPath = join(__dirname, '..', 'config', 'private', 'firebaseWebConfig.json');
 
 interface ServiceAccountWithWebConfig {
     project_id?: string;
     client_email?: string;
     private_key?: string;
-    webConfig?: {
-        apiKey?: string;
-        authDomain?: string;
-        appId?: string;
-        messagingSenderId?: string;
-    };
+}
+
+interface FirebaseWebConfig {
+    apiKey?: string;
+    authDomain?: string;
+    projectId?: string;
+    storageBucket?: string;
+    appId?: string;
+    messagingSenderId?: string;
+    measurementId?: string;
 }
 
 let serviceAccountRaw: string;
@@ -66,24 +71,40 @@ const firebaseApp = admin.apps.length
 
 const firebaseAuth = getAuth(firebaseApp);
 
-const derivedWebConfig = serviceAccount.webConfig ?? {};
+let webConfigRaw: string;
+try {
+    webConfigRaw = readFileSync(firebaseWebConfigPath, 'utf-8');
+} catch (error) {
+    console.error(`[AUTH] Unable to read Firebase web config file at ${firebaseWebConfigPath}`);
+    console.error('Create this file with your Web API credentials (apiKey, authDomain, appId, messagingSenderId).');
+    console.error(error instanceof Error ? error.message : error);
+    process.exit(1);
+}
+
+let firebaseWebConfig: FirebaseWebConfig;
+try {
+    firebaseWebConfig = JSON.parse(webConfigRaw);
+} catch (error) {
+    console.error('[AUTH] Failed to parse firebaseWebConfig.json. Ensure it is valid JSON.');
+    console.error(error instanceof Error ? error.message : error);
+    process.exit(1);
+}
+
 const publicFirebaseConfig = {
-    apiKey: derivedWebConfig.apiKey,
-    authDomain: derivedWebConfig.authDomain,
-    projectId: firebaseProjectId,
-    appId: derivedWebConfig.appId,
-    messagingSenderId: derivedWebConfig.messagingSenderId,
+    apiKey: firebaseWebConfig.apiKey,
+    authDomain: firebaseWebConfig.authDomain,
+    projectId: firebaseWebConfig.projectId || firebaseProjectId,
+    storageBucket: firebaseWebConfig.storageBucket,
+    appId: firebaseWebConfig.appId,
+    messagingSenderId: firebaseWebConfig.messagingSenderId,
+    measurementId: firebaseWebConfig.measurementId,
 };
 
-const missingWebConfig = Object.entries({
-    apiKey: publicFirebaseConfig.apiKey,
-    authDomain: publicFirebaseConfig.authDomain,
-    appId: publicFirebaseConfig.appId,
-    messagingSenderId: publicFirebaseConfig.messagingSenderId,
-}).filter(([, value]) => !value).map(([key]) => key);
+const mandatoryKeys: Array<keyof FirebaseWebConfig> = ['apiKey', 'authDomain', 'appId', 'messagingSenderId'];
+const missingWebConfig = mandatoryKeys.filter(key => !firebaseWebConfig[key]);
 
 if (missingWebConfig.length > 0) {
-    console.error('[AUTH] The serviceAccountKey.json file must include a "webConfig" object with apiKey, authDomain, appId, and messagingSenderId.');
+    console.error('[AUTH] firebaseWebConfig.json must include apiKey, authDomain, appId, and messagingSenderId.');
     console.error(`Missing: ${missingWebConfig.join(', ')}`);
     process.exit(1);
 }

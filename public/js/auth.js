@@ -2,11 +2,9 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.2/firebas
 import {
   browserLocalPersistence,
   getAuth,
-  GoogleAuthProvider,
   onAuthStateChanged,
   onIdTokenChanged,
   setPersistence,
-  signInWithPopup,
   signOut,
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js';
 
@@ -17,16 +15,21 @@ if (REQUIRE_AUTH) {
 
   const state = {
     auth: null,
-    provider: null,
     token: null,
     sessionReady: false,
     syncingPromise: null,
     overlay: null,
     overlayError: null,
-    signInButton: null,
     userChip: null,
     pendingAutoHx: new Set(),
+    authInitialized: false,
+    authReadyResolve: null,
   };
+
+  // Promise that resolves when auth state is known
+  const authReady = new Promise((resolve) => {
+    state.authReadyResolve = resolve;
+  });
 
   function mountOverlay() {
     if (state.overlay) {
@@ -38,14 +41,12 @@ if (REQUIRE_AUTH) {
     overlay.innerHTML = `
       <div class="auth-card glass-panel">
         <p class="eyebrow tight text-muted">Authentication Required</p>
-        <h2>Sign in to Promptly</h2>
-        <p class="text-muted">Use an account that belongs to the configured Firebase project.</p>
-        <button type="button" class="btn btn-primary" data-auth="sign-in">
-          <span data-auth="sign-in-label">Sign in with Google</span>
-        </button>
-        <p class="auth-alt-links">
-          Prefer email? <a href="/login">Log in</a> or <a href="/register">Register</a>
-        </p>
+        <h2>Sign in to continue</h2>
+        <p class="text-muted">Please sign in with your email and password to access this page.</p>
+        <div class="auth-actions">
+          <a href="/login" class="btn btn-primary">Sign In</a>
+          <a href="/register" class="btn btn-secondary">Create Account</a>
+        </div>
         <p class="auth-error" data-auth="error" role="alert"></p>
       </div>
     `;
@@ -53,10 +54,6 @@ if (REQUIRE_AUTH) {
 
     state.overlay = overlay;
     state.overlayError = overlay.querySelector('[data-auth="error"]');
-    state.signInButton = overlay.querySelector('[data-auth="sign-in"]');
-    if (state.signInButton) {
-      state.signInButton.addEventListener('click', handleSignIn);
-    }
   }
 
   function mountUserChip() {
@@ -87,19 +84,8 @@ if (REQUIRE_AUTH) {
     }
   }
 
-  function setSignInBusy(isBusy) {
-    if (!state.signInButton) {
-      return;
-    }
-    state.signInButton.disabled = isBusy;
-    const label = state.signInButton.querySelector('[data-auth="sign-in-label"]');
-    if (label) {
-      label.textContent = isBusy ? 'Working...' : 'Sign in with Google';
-    }
-  }
-
   function showOverlay(message) {
-    document.body.classList.add('auth-locked');
+    // Lazy mount: only create overlay when we actually need it
     if (!state.overlay) {
       mountOverlay();
     }
@@ -151,7 +137,22 @@ if (REQUIRE_AUTH) {
     state.userChip.hidden = false;
   }
 
+  function hasCachedAuth() {
+    // Synchronously check if Firebase has cached auth in localStorage
+    try {
+      const keys = Object.keys(localStorage);
+      return keys.some(key => key.includes('firebase:authUser'));
+    } catch {
+      return false;
+    }
+  }
+
   async function fetchFirebaseConfig() {
+    // Use inline config if available, otherwise fetch
+    if (window.__firebaseConfig__) {
+      return window.__firebaseConfig__;
+    }
+
     const response = await fetch('/config/firebase', { cache: 'no-store' });
     if (!response.ok) {
       throw new Error('Failed to load Firebase configuration.');
@@ -165,35 +166,14 @@ if (REQUIRE_AUTH) {
       const app = initializeApp(config);
       const auth = getAuth(app);
       await setPersistence(auth, browserLocalPersistence);
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: 'select_account' });
 
       state.auth = auth;
-      state.provider = provider;
 
       onIdTokenChanged(auth, handleIdTokenChange);
       onAuthStateChanged(auth, handleAuthStateChange);
     } catch (error) {
       console.error('[AUTH] Initialization failed:', error);
       showOverlay('Authentication is unavailable. Check console logs.');
-    }
-  }
-
-  async function handleSignIn(event) {
-    event.preventDefault();
-    if (!state.auth || !state.provider) {
-      return;
-    }
-
-    setOverlayError('');
-    setSignInBusy(true);
-    try {
-      await signInWithPopup(state.auth, state.provider);
-    } catch (error) {
-      console.error('[AUTH] Sign in failed:', error);
-      setOverlayError('Unable to sign in. Please try again.');
-    } finally {
-      setSignInBusy(false);
     }
   }
 
@@ -216,8 +196,16 @@ if (REQUIRE_AUTH) {
     if (!user) {
       state.token = null;
       state.sessionReady = false;
+      state.authInitialized = true;
       updateUserChip(null);
+      // User is NOT authenticated - now we show overlay
       showOverlay();
+      document.body.classList.add('auth-locked');
+      // Resolve auth ready promise
+      if (state.authReadyResolve) {
+        state.authReadyResolve();
+        state.authReadyResolve = null;
+      }
       try {
         await fetch('/api/auth/session', { method: 'DELETE' });
       } catch {
@@ -228,13 +216,35 @@ if (REQUIRE_AUTH) {
 
     try {
       state.token = await user.getIdToken();
+      state.authInitialized = true;
       updateUserChip(user);
-      await ensureServerSession(true);
-      hideOverlay();
+
+      // Resolve auth ready promise and flush queued requests BEFORE session sync
+      // This allows requests to proceed even if session sync is slow
+      if (state.authReadyResolve) {
+        state.authReadyResolve();
+        state.authReadyResolve = null;
+      }
       flushPendingAutoHx();
+
+      await ensureServerSession(true);
+      // User IS authenticated - ensure overlay is hidden
+      hideOverlay();
+      document.body.classList.remove('auth-locked');
     } catch (error) {
       console.error('[AUTH] Failed to sync session:', error);
+      state.authInitialized = true;
       showOverlay('Failed to synchronize session. Please retry.');
+      document.body.classList.add('auth-locked');
+      // Resolve auth ready promise even on error
+      if (state.authReadyResolve) {
+        state.authReadyResolve();
+        state.authReadyResolve = null;
+      }
+      // Flush pending requests even on error if we have a token
+      if (state.token) {
+        flushPendingAutoHx();
+      }
     }
   }
 
@@ -314,8 +324,28 @@ if (REQUIRE_AUTH) {
     state.pendingAutoHx.clear();
   }
 
-  document.body.addEventListener('htmx:configRequest', event => {
+  document.body.addEventListener('htmx:configRequest', (event) => {
+    // If auth hasn't initialized yet, queue the request
+    if (!state.authInitialized) {
+      event.preventDefault();
+      queueAutoHx(event.detail.elt);
+      return;
+    }
+
+    // Auth is initialized - check if we have a token
     if (!state.token) {
+      // Check if this is a guarded element that should redirect instead of showing overlay
+      const isGuarded = event.detail.elt?.dataset.authGuard === 'true' ||
+                        event.detail.elt?.closest('[data-auth-guard="true"]');
+
+      if (isGuarded) {
+        // Redirect to login for guarded elements
+        event.preventDefault();
+        const next = encodeURIComponent(window.location.href);
+        window.location.href = `/login?next=${next}`;
+        return;
+      }
+
       if (event.detail.elt?.dataset.authRetry === 'auto') {
         queueAutoHx(event.detail.elt);
       }
@@ -324,13 +354,13 @@ if (REQUIRE_AUTH) {
       return;
     }
 
+    // We have a token - add it to the request
     event.detail.headers = event.detail.headers || {};
     event.detail.headers.Authorization = `Bearer ${state.token}`;
   });
 
-  document.body.classList.add('auth-locked');
-  mountOverlay();
+  // Optimistic auth flow: trust cached auth, verify in background
+  // Don't mount or show anything initially - let Firebase decide
   mountUserChip();
-  showOverlay();
   bootstrapAuth();
 }

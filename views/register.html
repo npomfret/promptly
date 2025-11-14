@@ -18,9 +18,6 @@
           <p class="eyebrow">Promptly</p>
           <h1>Create your account</h1>
         </div>
-        <a href="/" class="home-icon" title="Back to home">
-          <i data-lucide="home" class="icon"></i>
-        </a>
       </div>
 
       <p class="text-muted mb-md">Register with your email address. Already joined? <a href="/login">Sign in</a>.</p>
@@ -38,12 +35,12 @@
 
         <div class="form-group">
           <label for="password">Password</label>
-          <input type="password" id="password" name="password" placeholder="At least 8 characters" autocomplete="new-password" required minlength="8">
+          <input type="password" id="password" name="password" placeholder="At least 12 characters" autocomplete="new-password" required minlength="12">
         </div>
 
         <div class="form-group">
           <label for="confirmPassword">Confirm Password</label>
-          <input type="password" id="confirmPassword" name="confirmPassword" placeholder="Repeat your password" autocomplete="new-password" required minlength="8">
+          <input type="password" id="confirmPassword" name="confirmPassword" placeholder="Repeat your password" autocomplete="new-password" required minlength="12">
         </div>
 
         <p class="auth-error" data-auth-error role="alert"></p>
@@ -54,12 +51,12 @@
       </form>
 
       <div class="auth-alt-links">
-        <p>Prefer Google? <a href="/">Use single sign-on</a></p>
         <p>Already have an account? <a href="/login">Sign in</a></p>
       </div>
     </section>
   </main>
 
+  <script type="module" src="/js/ui.js"></script>
   <script type="module" src="/js/auth-forms.js"></script>
   <script>
     lucide.createIcons();

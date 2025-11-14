@@ -8,6 +8,15 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css">
+  <script>
+    // Pre-load Firebase config to eliminate async delay
+    (function() {
+      fetch('/config/firebase', { cache: 'no-store' })
+        .then(r => r.json())
+        .then(config => { window.__firebaseConfig__ = config; })
+        .catch(err => console.warn('[AUTH] Failed to pre-load Firebase config:', err));
+    })();
+  </script>
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
 </head>
@@ -45,6 +54,14 @@
     lucide.createIcons();
     document.body.addEventListener('htmx:afterSwap', () => {
       lucide.createIcons();
+    });
+
+    // Handle 401 errors by redirecting to login
+    document.body.addEventListener('htmx:responseError', (event) => {
+      if (event.detail?.xhr?.status === 401) {
+        const next = encodeURIComponent(window.location.href);
+        window.location.href = `/login?next=${next}`;
+      }
     });
   </script>
 </body>

@@ -8,6 +8,15 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css">
+  <script>
+    // Pre-load Firebase config to eliminate async delay
+    (function() {
+      fetch('/config/firebase', { cache: 'no-store' })
+        .then(r => r.json())
+        .then(config => { window.__firebaseConfig__ = config; })
+        .catch(err => console.warn('[AUTH] Failed to pre-load Firebase config:', err));
+    })();
+  </script>
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
 </head>
@@ -18,17 +27,13 @@
       <h1>Keep projects warm, prompts sharp, and <span>Gemini</span> ready on demand.</h1>
       <p class="lede">Register repositories, hydrate sessions, and monitor cache health from a single cinematic workspace. Add a project and the watcher takes care of the rest.</p>
       <div class="hero-actions">
-        <a class="btn btn-primary" href="#project-form">
-          <i data-lucide="sparkles" class="icon"></i>
-          Add Project
-        </a>
         <a class="btn btn-secondary" href="/projects">
           <i data-lucide="list" class="icon"></i>
           View Projects
         </a>
-        <a class="btn btn-secondary" href="/login">
+        <a class="btn btn-secondary" href="/login" id="login-btn">
           <i data-lucide="log-in" class="icon"></i>
-          Email Login
+          Login
         </a>
       </div>
     </header>
@@ -42,9 +47,7 @@
           </div>
         </div>
         <form hx-post="/api/projects"
-              hx-target="#project-list"
-              hx-swap="innerHTML"
-              hx-on::after-request="if(event.detail.successful) this.reset()"
+              hx-on::after-request="if(event.detail.successful) window.location.href='/projects'"
               data-auth-guard="true">
           <div class="form-group">
             <label for="gitUrl">Git URL</label>
@@ -137,13 +140,33 @@
     </section>
   </main>
 
-  <script type="module" src="/js/auth.js"></script>
   <script type="module" src="/js/ui.js"></script>
+  <script type="module">
+    // Conditionally load auth.js only if user might be authenticated
+    // This allows logged-in users to use features, but doesn't block unauthenticated visitors
+    (async function() {
+      // Check if user has cached Firebase auth
+      const hasCachedAuth = Object.keys(localStorage).some(key => key.includes('firebase:authUser'));
+      if (hasCachedAuth) {
+        // Load auth.js for authenticated users
+        await import('/js/auth.js');
+      }
+    })();
+  </script>
   <script>
     lucide.createIcons();
     document.body.addEventListener('htmx:afterSwap', () => {
       lucide.createIcons();
     });
+
+    // Hide login button if user is authenticated
+    (function() {
+      const hasCachedAuth = Object.keys(localStorage).some(key => key.includes('firebase:authUser'));
+      if (hasCachedAuth) {
+        const loginBtn = document.getElementById('login-btn');
+        if (loginBtn) loginBtn.style.display = 'none';
+      }
+    })();
 
     document.body.addEventListener('htmx:responseError', (event) => {
       if (!event.detail || !event.detail.xhr) return;
