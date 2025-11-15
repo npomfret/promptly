@@ -115,9 +115,7 @@
       <div class="curl-code-container">
         <pre id="curl-enhance">curl -X POST "{{BASE_URL}}/enhance/YOUR_PROJECT_ID" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $FIREBASE_ID_TOKEN" \
-  -d '{"message": "Let's add Kafka for no apparent reason"}' \
-  -c cookies.txt -b cookies.txt</pre>
+  -d '{"message": "Let's add Kafka for no apparent reason"}'</pre>
         <button class="btn btn-secondary btn-small copy-btn" onclick="copyCurlCode('curl-enhance', this)">
           <i data-lucide="copy" class="icon"></i>
           Copy
@@ -129,9 +127,7 @@
       <div class="curl-code-container">
         <pre id="curl-ask">curl -X POST "{{BASE_URL}}/ask/YOUR_PROJECT_ID" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $FIREBASE_ID_TOKEN" \
-  -d '{"message": "What are the likely implications of adding Kafka when we obviously don't need it?"}' \
-  -c cookies.txt -b cookies.txt</pre>
+  -d '{"message": "What are the likely implications of adding Kafka when we obviously don't need it?"}'</pre>
         <button class="btn btn-secondary btn-small copy-btn" onclick="copyCurlCode('curl-ask', this)">
           <i data-lucide="copy" class="icon"></i>
           Copy

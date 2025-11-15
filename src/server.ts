@@ -1786,7 +1786,7 @@ app.post('/cache/refresh', requireAuth, async (req: Request, res: Response<Cache
 /**
  * Main chat endpoint - send message to Gemini
  */
-app.post('/enhance', requireAuth, async (req: Request<{}, ChatResponse | ErrorResponse, ChatRequest>, res: Response<ChatResponse | ErrorResponse>) => {
+app.post('/enhance', async (req: Request<{}, ChatResponse | ErrorResponse, ChatRequest>, res: Response<ChatResponse | ErrorResponse>) => {
     try {
         const { message } = req.body;
         const projectId = req.query.projectId as string;
@@ -1878,7 +1878,7 @@ app.post('/enhance', requireAuth, async (req: Request<{}, ChatResponse | ErrorRe
 /**
  * Ask endpoint - send question to critical thinking AI
  */
-app.post('/ask', requireAuth, async (req: Request<{}, ChatResponse | ErrorResponse, ChatRequest>, res: Response<ChatResponse | ErrorResponse>) => {
+app.post('/ask', async (req: Request<{}, ChatResponse | ErrorResponse, ChatRequest>, res: Response<ChatResponse | ErrorResponse>) => {
     try {
         const { message } = req.body;
         const projectId = req.query.projectId as string;
@@ -1959,7 +1959,7 @@ app.post('/ask', requireAuth, async (req: Request<{}, ChatResponse | ErrorRespon
 /**
  * Enhance endpoint with path parameter - matches browser URL format
  */
-app.post('/enhance/:projectId', requireAuth, async (req: Request<{projectId: string}, ChatResponse | ErrorResponse, ChatRequest>, res: Response<ChatResponse | ErrorResponse>) => {
+app.post('/enhance/:projectId', async (req: Request<{projectId: string}, ChatResponse | ErrorResponse, ChatRequest>, res: Response<ChatResponse | ErrorResponse>) => {
     try {
         const { message } = req.body;
         const projectId = req.params.projectId;
@@ -2013,7 +2013,7 @@ app.post('/enhance/:projectId', requireAuth, async (req: Request<{projectId: str
 /**
  * Ask endpoint with path parameter - matches browser URL format
  */
-app.post('/ask/:projectId', requireAuth, async (req: Request<{projectId: string}, ChatResponse | ErrorResponse, ChatRequest>, res: Response<ChatResponse | ErrorResponse>) => {
+app.post('/ask/:projectId', async (req: Request<{projectId: string}, ChatResponse | ErrorResponse, ChatRequest>, res: Response<ChatResponse | ErrorResponse>) => {
     try {
         const { message } = req.body;
         const projectId = req.params.projectId;

@@ -111,9 +111,7 @@
             <div class="curl-code-container">
               <pre id="curl-code">curl -X POST "{{BASE_URL}}/ask/{{PROJECT_ID}}" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $FIREBASE_ID_TOKEN" \
-  -d '{"message": "How should I implement authentication?"}' \
-  -c cookies.txt -b cookies.txt</pre>
+  -d '{"message": "How should I implement authentication?"}'</pre>
               <button class="btn btn-secondary btn-small copy-btn" onclick="copyCurl(this)">
                 <i data-lucide="copy" class="icon"></i>
                 Copy
