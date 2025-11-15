@@ -21,8 +21,8 @@ services:
       - ./data/projects.json:/app/projects.json
       # Optional: Mount custom prompts
       - ./prompts:/app/prompts:ro
-      # Mount Firebase config files
-      - ./config/private:/app/config/private:ro
+      # Mount Firebase config files from persistent server location
+      - /opt/promptly-data/config:/app/config/private:ro
     networks:
       - promptly-network
       - snowmonkey-proxy-network

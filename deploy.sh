@@ -105,11 +105,6 @@ scp -r \
     projects.json \
     "$SERVER:$DEPLOY_DIR/" 2>/dev/null || echo "Config files not found locally (using server versions)"
 
-# Copy Firebase private config files (these are symlinks in git, need actual files)
-scp -r \
-    config/private/*.json \
-    "$SERVER:$DEPLOY_DIR/config/private/" 2>/dev/null || echo "Firebase config files not found locally"
-
 echo -e "${GREEN}✓${NC} Config files updated"
 
 echo ""
