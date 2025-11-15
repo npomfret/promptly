@@ -78,23 +78,15 @@ Promptly now requires Firebase Authentication for every API call.
 4. When the server starts you must sign in via the browser UI (Google popup) before any HTMX requests fire. Successful sign-in also provisions an Express session so server-rendered routes like `/enhance/:projectId` stay protected.
 5. Prefer email + password? Visit `/register` to create an account or `/login` to sign in with those credentials. Both pages sync your Firebase session with the Express server automatically.
 
-To call the HTTP API directly you need to mint a Firebase ID token and pass it as a `Bearer` token:
+The `/enhance` and `/ask` API endpoints are now public (no authentication required):
 
 ```bash
-# Example with email/password provider enabled
-FIREBASE_API_KEY=$(node -p "JSON.parse(require('fs').readFileSync('config/private/firebaseWebConfig.json','utf8')).apiKey")
-ID_TOKEN=$(curl -s "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_API_KEY}" \
+curl -X POST "http://localhost:3000/enhance/YOUR_PROJECT_ID" \
   -H "Content-Type: application/json" \
-  -d '{"email":"dev@example.com","password":"super-secret","returnSecureToken":true}' \
-  | jq -r '.idToken')
-
-curl -X POST "http://localhost:3000/enhance?projectId=demo" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $ID_TOKEN" \
   -d '{"message":"Ship mode?!"}'
 ```
 
-Any endpoint listed below will return `401 Unauthorized` unless a valid Firebase ID token (or a previously established browser session) is present.
+Other endpoints (project management, etc.) still require authentication via Firebase ID token or browser session.
 
 ## Private Repositories
 
