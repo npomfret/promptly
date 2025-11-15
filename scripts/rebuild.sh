@@ -11,10 +11,6 @@ echo "🔨 Rebuilding Docker image on server..."
 ssh $SERVER bash <<ENDSSH
     cd $DEPLOY_DIR
 
-    echo "Pulling latest code from git..."
-    git fetch origin
-    git reset --hard origin/main
-
     echo "Stopping containers..."
     docker-compose down
 
