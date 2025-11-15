@@ -1981,25 +1981,46 @@ app.post('/enhance/:projectId', async (req: Request<{projectId: string}, ChatRes
         console.log(processedMessage);
         console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
 
-        const response = await chat({
-            sessionId,
-            projectId,
-            message: processedMessage,
-            mode: 'enhance',
-            history: sessionData.history,
-        });
+        // Send processed message and get response
+        const response = await sendMessageWithRetry(sessionData, processedMessage, projectId, sessionId);
 
-        console.log(`[${new Date().toISOString()}] AI Response:`);
-        console.log(response.text);
+        console.log(`[${new Date().toISOString()}] Response:`);
+        console.log(response);
         console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════\n`);
 
-        await appendChatToHistory(sessionId, projectId, 'enhance', processedMessage, response.text);
+        // Store in history (using processed message)
+        const timestamp = new Date();
+        sessionData.history.push(
+            {
+                role: 'user',
+                message: processedMessage,
+                timestamp,
+            },
+            {
+                role: 'model',
+                message: response,
+                timestamp,
+            },
+        );
 
-        res.json({
+        // Write to history file if configured
+        const project = projects.get(projectId);
+        writeHistoryEntry({
             sessionId,
             projectId,
+            timestamp,
+            request: processedMessage,
+            response,
+            messageCount: sessionData.history.length,
+            cachedContentName: project?.cachedContent?.name,
             mode: 'enhance',
-            response: response.text,
+        });
+
+        res.json({
+            success: true,
+            sessionId,
+            projectId,
+            response,
         });
     } catch (error) {
         console.error('[ERROR] Failed to process enhance:', error);
@@ -2035,25 +2056,46 @@ app.post('/ask/:projectId', async (req: Request<{projectId: string}, ChatRespons
         console.log(processedMessage);
         console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
 
-        const response = await chat({
-            sessionId,
-            projectId,
-            message: processedMessage,
-            mode: 'ask',
-            history: sessionData.history,
-        });
+        // Send processed message and get response
+        const response = await sendMessageWithRetry(sessionData, processedMessage, projectId, sessionId);
 
-        console.log(`[${new Date().toISOString()}] AI Response:`);
-        console.log(response.text);
+        console.log(`[${new Date().toISOString()}] Response:`);
+        console.log(response);
         console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════\n`);
 
-        await appendChatToHistory(sessionId, projectId, 'ask', processedMessage, response.text);
+        // Store in history (using processed message)
+        const timestamp = new Date();
+        sessionData.history.push(
+            {
+                role: 'user',
+                message: processedMessage,
+                timestamp,
+            },
+            {
+                role: 'model',
+                message: response,
+                timestamp,
+            },
+        );
 
-        res.json({
+        // Write to history file if configured
+        const project = projects.get(projectId);
+        writeHistoryEntry({
             sessionId,
             projectId,
+            timestamp,
+            request: processedMessage,
+            response,
+            messageCount: sessionData.history.length,
+            cachedContentName: project?.cachedContent?.name,
             mode: 'ask',
-            response: response.text,
+        });
+
+        res.json({
+            success: true,
+            sessionId,
+            projectId,
+            response,
         });
     } catch (error) {
         console.error('[ERROR] Failed to process ask:', error);
