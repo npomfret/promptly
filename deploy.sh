@@ -27,15 +27,9 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
-# Check if projects.json exists
+# Note: projects.json is not required locally as it will be managed on the server
 if [ ! -f projects.json ]; then
-    echo -e "${YELLOW}Warning: projects.json not found. Using example file.${NC}"
-    if [ -f projects.json.example ]; then
-        cp projects.json.example projects.json
-    else
-        echo -e "${RED}Error: Neither projects.json nor projects.json.example found!${NC}"
-        exit 1
-    fi
+    echo -e "${YELLOW}Note: projects.json not found locally. This is fine - it will be managed on the server.${NC}"
 fi
 
 echo -e "${BLUE}[1/6]${NC} Testing SSH connection..."
@@ -99,13 +93,11 @@ echo -e "${GREEN}✓${NC} Code pulled from git"
 
 echo ""
 echo -e "${BLUE}[4.5/6]${NC} Copying config files..."
-# Only copy config files (not source code)
-scp -r \
-    .env \
-    projects.json \
-    "$SERVER:$DEPLOY_DIR/" 2>/dev/null || echo "Config files not found locally (using server versions)"
+# Only copy .env file (not projects.json to preserve server-specific configuration)
+scp .env "$SERVER:$DEPLOY_DIR/" 2>/dev/null || echo ".env file not found locally (using server version)"
 
 echo -e "${GREEN}✓${NC} Config files updated"
+echo -e "${YELLOW}Note:${NC} projects.json is not copied to preserve server-specific project configuration"
 
 echo ""
 echo -e "${BLUE}[5/6]${NC} Creating data directories..."

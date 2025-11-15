@@ -715,7 +715,13 @@ function generateProjectsTable(): string {
 
             return `
     <tr class="project-item">
-      <td><a href="/projects/${p.id}/edit">${p.id}</a> ${statusBadge}</td>
+      <td>
+        <a href="/projects/${p.id}/edit">${p.id}</a>
+        <button onclick="copyProjectIdFromTable('${p.id}', this)" class="btn-icon" title="Copy Project ID" style="margin-left: 8px;">
+          <i data-lucide="copy" class="icon" style="width: 14px; height: 14px;"></i>
+        </button>
+        ${statusBadge}
+      </td>
       <td>${redactGitUrl(p.gitUrl)}</td>
       <td>${p.branch}</td>
       <td class="text-muted">${timeAgo(new Date(p.lastUpdated))}</td>
@@ -966,12 +972,11 @@ app.post('/projects/:projectId/edit', requireSessionUser, async (req: Request, r
         }
 
         const cleanUrl = cleanGitUrl(trimmedGitUrl);
-        const newProjectId = generateProjectId(cleanUrl, normalizedBranch);
 
         const config = await loadProjectsConfig();
         const configIndex = config.projects.findIndex(p => {
             const storedBranch = p.branch || 'main';
-            const storedId = generateProjectId(cleanGitUrl(p.gitUrl), storedBranch);
+            const storedId = generateProjectId(cleanGitUrl(p.gitUrl), storedBranch, p.accessToken);
             return storedId === projectId;
         });
 
@@ -981,21 +986,7 @@ app.post('/projects/:projectId/edit', requireSessionUser, async (req: Request, r
             return res.status(404).send(html);
         }
 
-        if (newProjectId !== projectId) {
-            const conflict = config.projects.some((p, index) => {
-                if (index === configIndex) {
-                    return false;
-                }
-                const storedBranch = p.branch || 'main';
-                return generateProjectId(cleanGitUrl(p.gitUrl), storedBranch) === newProjectId;
-            });
-
-            if (conflict) {
-                const html = renderProjectEditPage(project, '<div class="alert error">Another project already uses that Git URL and branch.</div>');
-                return res.status(400).send(html);
-            }
-        }
-
+        // Determine the final token to persist
         let tokenToPersist: string | undefined;
         if (shouldClearToken) {
             tokenToPersist = undefined;
@@ -1003,6 +994,25 @@ app.post('/projects/:projectId/edit', requireSessionUser, async (req: Request, r
             tokenToPersist = normalizedAccessToken;
         } else {
             tokenToPersist = project.accessToken;
+        }
+
+        // Generate new project ID with the final token
+        const newProjectId = generateProjectId(cleanUrl, normalizedBranch, tokenToPersist);
+
+        // Check for conflicts with other projects
+        if (newProjectId !== projectId) {
+            const conflict = config.projects.some((p, index) => {
+                if (index === configIndex) {
+                    return false;
+                }
+                const storedBranch = p.branch || 'main';
+                return generateProjectId(cleanGitUrl(p.gitUrl), storedBranch, p.accessToken) === newProjectId;
+            });
+
+            if (conflict) {
+                const html = renderProjectEditPage(project, '<div class="alert error">Another project already uses that Git URL, branch, and access token combination.</div>');
+                return res.status(400).send(html);
+            }
         }
 
         const updatedEntry: ProjectConfig = {

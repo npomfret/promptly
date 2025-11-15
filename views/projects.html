@@ -56,6 +56,23 @@
       lucide.createIcons();
     });
 
+    // Copy project ID from table
+    function copyProjectIdFromTable(projectId, buttonEl) {
+      navigator.clipboard.writeText(projectId).then(() => {
+        const btn = buttonEl || event?.currentTarget;
+        const originalHTML = btn.innerHTML;
+        btn.innerHTML = '<i data-lucide="check" class="icon" style="width: 14px; height: 14px;"></i>';
+        lucide.createIcons();
+        setTimeout(() => {
+          btn.innerHTML = originalHTML;
+          lucide.createIcons();
+        }, 2000);
+      }).catch(err => {
+        console.error('Failed to copy project ID:', err);
+        alert('Failed to copy project ID to clipboard');
+      });
+    }
+
     // Handle 401 errors by redirecting to login
     document.body.addEventListener('htmx:responseError', (event) => {
       if (event.detail?.xhr?.status === 401) {
