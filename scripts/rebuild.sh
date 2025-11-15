@@ -1,40 +1,33 @@
 #!/bin/bash
-# Rebuild and restart the application
+# Rebuild Docker image on server (no file copying)
 
 set -e
 
-echo "Stopping application..."
-ssh root@promptly.snowmonkey.co.uk 'cd /opt/promptly && docker-compose down'
+SERVER="root@promptly.snowmonkey.co.uk"
+DEPLOY_DIR="/opt/promptly"
+
+echo "🔨 Rebuilding Docker image on server..."
+
+ssh $SERVER bash <<ENDSSH
+    cd $DEPLOY_DIR
+
+    echo "Stopping containers..."
+    docker-compose down
+
+    echo "Building new image..."
+    docker build -t promptly:latest .
+
+    echo "Starting containers..."
+    docker-compose up -d
+
+    echo "Waiting for startup..."
+    sleep 5
+
+    echo ""
+    echo "Container status:"
+    docker-compose ps
+ENDSSH
 
 echo ""
-echo "Copying updated files..."
-scp -r \
-    src \
-    views \
-    public \
-    prompts \
-    package.json \
-    package-lock.json \
-    tsconfig.json \
-    Dockerfile \
-    root@promptly.snowmonkey.co.uk:/opt/promptly/
-
-echo ""
-echo "Rebuilding Docker image..."
-ssh root@promptly.snowmonkey.co.uk 'cd /opt/promptly && docker build -t promptly:latest .'
-
-echo ""
-echo "Starting application..."
-ssh root@promptly.snowmonkey.co.uk 'cd /opt/promptly && docker-compose up -d'
-
-echo ""
-echo "Waiting for application to start..."
-sleep 5
-
-echo ""
-echo "=== Application Status ==="
-ssh root@promptly.snowmonkey.co.uk 'cd /opt/promptly && docker-compose ps'
-
-echo ""
-echo "Rebuild complete!"
+echo "✅ Rebuild complete!"
 echo "View logs with: ./scripts/logs.sh"
