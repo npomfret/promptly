@@ -120,15 +120,57 @@ At runtime, tokens are injected as `https://TOKEN@github.com/user/repo.git` when
 3. Add `accessToken` field to project in `projects.json`
 4. Deploy: `./scripts/update-projects.sh`
 
+## Production Architecture
+
+Promptly runs on `promptly.snowmonkey.co.uk` behind a centralized nginx reverse proxy ([snowmonkey-proxy-common](https://github.com/npomfret/snowmonkey-proxy-common)):
+
+```
+snowmonkey-proxy (nginx) → promptly container
+         ↓
+  snowmonkey-proxy-network (shared Docker network)
+```
+
+The reverse proxy handles:
+- SSL/TLS termination
+- Domain-based routing
+- WebSocket support
+- Shared by multiple applications
+
+## Deployment
+
+### Full Deployment
+
+Deploy code, rebuild image, and restart:
+
+```bash
+./deploy.sh
+```
+
+This will:
+1. Copy all source files to server (`/opt/promptly`)
+2. Build Docker image on server
+3. Restart containers with new image
+4. Connect to `snowmonkey-proxy-network` automatically
+
+### Rebuild Only
+
+If files are already on the server and you just need to rebuild:
+
+```bash
+./scripts/rebuild.sh
+```
+
+This rebuilds the Docker image on the server using existing files and restarts containers.
+
 ## Deployment Scripts
 
 | Script | Purpose |
 |--------|---------|
-| `./deploy.sh` | Full deployment to server |
+| `./deploy.sh` | **Full deployment** - copies files, rebuilds, restarts |
+| `./scripts/rebuild.sh` | **Rebuild only** - rebuilds Docker image on server (no file copy) |
 | `./scripts/status.sh` | Check health and container status |
 | `./scripts/logs.sh` | Stream live logs |
-| `./scripts/restart.sh` | Restart without rebuild |
-| `./scripts/rebuild.sh` | Rebuild image and restart |
+| `./scripts/restart.sh` | Restart containers without rebuild |
 | `./scripts/update-env.sh` | Push `.env` changes to server |
 | `./scripts/update-projects.sh` | Push `projects.json` to server |
 | `./scripts/backup.sh` | Download server data to `./backups/` |
