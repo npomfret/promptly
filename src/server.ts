@@ -1948,6 +1948,114 @@ app.post('/ask', requireAuth, async (req: Request<{}, ChatResponse | ErrorRespon
 });
 
 /**
+ * Enhance endpoint with path parameter - matches browser URL format
+ */
+app.post('/enhance/:projectId', requireAuth, async (req: Request<{projectId: string}, ChatResponse | ErrorResponse, ChatRequest>, res: Response<ChatResponse | ErrorResponse>) => {
+    try {
+        const { message } = req.body;
+        const projectId = req.params.projectId;
+
+        if (!message || typeof message !== 'string') {
+            return res.status(400).json({
+                error: 'Message is required and must be a string',
+            });
+        }
+
+        const processedMessage = processUserMessage(message);
+
+        const sessionId = req.session.id;
+        const sessionData = await getChatSession(sessionId, projectId, 'enhance');
+
+        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
+        console.log(`[${new Date().toISOString()}] Session: ${sessionId}:${projectId}:enhance`);
+        console.log(`[${new Date().toISOString()}] Input Message:`);
+        console.log(processedMessage);
+        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
+
+        const response = await chat({
+            sessionId,
+            projectId,
+            message: processedMessage,
+            mode: 'enhance',
+            history: sessionData.history,
+        });
+
+        console.log(`[${new Date().toISOString()}] AI Response:`);
+        console.log(response.text);
+        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════\n`);
+
+        await appendChatToHistory(sessionId, projectId, 'enhance', processedMessage, response.text);
+
+        res.json({
+            sessionId,
+            projectId,
+            mode: 'enhance',
+            response: response.text,
+        });
+    } catch (error) {
+        console.error('[ERROR] Failed to process enhance:', error);
+        res.status(500).json({
+            error: 'Failed to process message',
+            details: error instanceof Error ? error.message : 'Unknown error',
+        });
+    }
+});
+
+/**
+ * Ask endpoint with path parameter - matches browser URL format
+ */
+app.post('/ask/:projectId', requireAuth, async (req: Request<{projectId: string}, ChatResponse | ErrorResponse, ChatRequest>, res: Response<ChatResponse | ErrorResponse>) => {
+    try {
+        const { message } = req.body;
+        const projectId = req.params.projectId;
+
+        if (!message || typeof message !== 'string') {
+            return res.status(400).json({
+                error: 'Message is required and must be a string',
+            });
+        }
+
+        const processedMessage = processUserMessage(message);
+
+        const sessionId = req.session.id;
+        const sessionData = await getChatSession(sessionId, projectId, 'ask');
+
+        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
+        console.log(`[${new Date().toISOString()}] Session: ${sessionId}:${projectId}:ask`);
+        console.log(`[${new Date().toISOString()}] Input Message:`);
+        console.log(processedMessage);
+        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
+
+        const response = await chat({
+            sessionId,
+            projectId,
+            message: processedMessage,
+            mode: 'ask',
+            history: sessionData.history,
+        });
+
+        console.log(`[${new Date().toISOString()}] AI Response:`);
+        console.log(response.text);
+        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════\n`);
+
+        await appendChatToHistory(sessionId, projectId, 'ask', processedMessage, response.text);
+
+        res.json({
+            sessionId,
+            projectId,
+            mode: 'ask',
+            response: response.text,
+        });
+    } catch (error) {
+        console.error('[ERROR] Failed to process ask:', error);
+        res.status(500).json({
+            error: 'Failed to process message',
+            details: error instanceof Error ? error.message : 'Unknown error',
+        });
+    }
+});
+
+/**
  * Get chat history for current session
  */
 app.get('/history', requireAuth, (req: Request, res: Response<HistoryResponse | ErrorResponse>) => {
