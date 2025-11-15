@@ -113,7 +113,7 @@
       <h3 class="subheading mb-md mt-md"><i data-lucide="sparkles" class="icon"></i> Enhance Mode</h3>
       <p class="text-muted mb-md">Get AI-powered enhancements and expansions for your prompts</p>
       <div class="curl-code-container">
-        <pre id="curl-enhance">curl -X POST "http://localhost:3000/enhance?projectId=YOUR_PROJECT_ID" \
+        <pre id="curl-enhance">curl -X POST "https://promptly.snowmonkey.co.uk/enhance?projectId=YOUR_PROJECT_ID" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $FIREBASE_ID_TOKEN" \
   -d '{"message": "Let's add Kafka for no apparent reason"}' \
@@ -127,7 +127,7 @@
       <h3 class="subheading mb-md mt-lg"><i data-lucide="help-circle" class="icon"></i> Ask Mode</h3>
       <p class="text-muted mb-md">Get critical analysis with probing questions</p>
       <div class="curl-code-container">
-        <pre id="curl-ask">curl -X POST "http://localhost:3000/ask?projectId=YOUR_PROJECT_ID" \
+        <pre id="curl-ask">curl -X POST "https://promptly.snowmonkey.co.uk/ask?projectId=YOUR_PROJECT_ID" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $FIREBASE_ID_TOKEN" \
   -d '{"message": "What are the likely implications of adding Kafka when we obviously don't need it?"}' \

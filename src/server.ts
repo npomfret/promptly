@@ -328,6 +328,9 @@ async function createCachedContent(project: Project): Promise<any> {
     return cacheResult;
 }
 
+// Trust proxy headers (we're behind nginx reverse proxy)
+app.set('trust proxy', true);
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -342,16 +345,21 @@ app.get('/config/firebase', (_req: Request, res: Response) => {
     res.json(getFirebaseClientConfig());
 });
 
+// Determine if we're in production (behind HTTPS proxy)
+const isProduction = process.env.NODE_ENV === 'production';
+const secureCookies = process.env.SECURE_COOKIES === 'true' || isProduction;
+
 app.use(
     session({
         secret: SESSION_SECRET,
         resave: false,
         saveUninitialized: false, // Don't save empty sessions
         cookie: {
-            secure: false, // Set to true if using HTTPS
+            secure: secureCookies, // Dynamic based on environment
             httpOnly: true,
             maxAge: SESSION_MAX_AGE,
             sameSite: 'lax',
+            ...(process.env.COOKIE_DOMAIN && { domain: process.env.COOKIE_DOMAIN }),
         },
     }),
 );
