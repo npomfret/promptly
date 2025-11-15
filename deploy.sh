@@ -48,45 +48,6 @@ else
 fi
 
 echo ""
-# Ask if user wants to pull config files from server
-if ssh "$SERVER" "[ -f $DEPLOY_DIR/.env ] || [ -f $DEPLOY_DIR/projects.json ]" 2>/dev/null; then
-    echo -e "${YELLOW}Configuration files exist on the server.${NC}"
-    echo "Deploying will overwrite server config with your local files."
-    echo ""
-    read -p "Do you want to pull server config files to your local machine first? (y/N): " -n 1 -r
-    echo ""
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo ""
-        echo -e "${BLUE}Pulling configuration files from server...${NC}"
-
-        # Create backups of local files if they exist
-        if [ -f .env ]; then
-            echo -e "${BLUE}Creating backup:${NC} .env -> .env.backup"
-            cp .env .env.backup
-        fi
-
-        if [ -f projects.json ]; then
-            echo -e "${BLUE}Creating backup:${NC} projects.json -> projects.json.backup"
-            cp projects.json projects.json.backup
-        fi
-
-        # Pull .env
-        if ssh "$SERVER" "[ -f $DEPLOY_DIR/.env ]"; then
-            scp "$SERVER:$DEPLOY_DIR/.env" .env
-            echo -e "${GREEN}✓${NC} Downloaded .env"
-        fi
-
-        # Pull projects.json
-        if ssh "$SERVER" "[ -f $DEPLOY_DIR/projects.json ]"; then
-            scp "$SERVER:$DEPLOY_DIR/projects.json" projects.json
-            echo -e "${GREEN}✓${NC} Downloaded projects.json"
-        fi
-
-        echo ""
-    fi
-fi
-
-echo ""
 echo -e "${BLUE}[2/6]${NC} Checking server prerequisites..."
 ssh "$SERVER" bash <<'ENDSSH'
     # Check if Docker is installed
