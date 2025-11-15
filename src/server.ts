@@ -863,9 +863,12 @@ function clearSessionsForProject(projectId: string): number {
 /**
  * Serve the main dashboard page (public, but functionality requires auth)
  */
-app.get('/', (_req: Request, res: Response) => {
+app.get('/', (req: Request, res: Response) => {
     const indexPath = join(__dirname, '..', 'views', 'index.html');
-    res.sendFile(indexPath);
+    let indexHTML = readFileSync(indexPath, 'utf-8');
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    indexHTML = indexHTML.replace(/\{\{BASE_URL\}\}/g, baseUrl);
+    res.send(indexHTML);
 });
 
 app.get('/login', (req: Request, res: Response) => {
@@ -1158,6 +1161,8 @@ app.get('/enhance/:projectId', requireSessionUser, (req: Request, res: Response)
     const chatPath = join(__dirname, '..', 'views', 'enhance.html');
     let chatHTML = readFileSync(chatPath, 'utf-8');
 
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+
     chatHTML = chatHTML
         .replace(/\{\{PROJECT_NAME\}\}/g, extractRepoName(project.gitUrl))
         .replace(/\{\{REPO_NAME\}\}/g, extractRepoName(project.gitUrl))
@@ -1165,7 +1170,8 @@ app.get('/enhance/:projectId', requireSessionUser, (req: Request, res: Response)
         .replace(/\{\{PROJECT_ID\}\}/g, project.id)
         .replace(/\{\{PROJECT_BRANCH\}\}/g, project.branch)
         .replace(/\{\{MESSAGES\}\}/g, messagesHTML)
-        .replace(/\{\{SYSTEM_PROMPT\}\}/g, renderMarkdown(systemPrompt)); // Render markdown for system prompt
+        .replace(/\{\{SYSTEM_PROMPT\}\}/g, renderMarkdown(systemPrompt))
+        .replace(/\{\{BASE_URL\}\}/g, baseUrl);
 
     res.send(chatHTML);
 });
@@ -1264,6 +1270,8 @@ app.get('/ask/:projectId', requireSessionUser, (req: Request, res: Response) => 
     const askPath = join(__dirname, '..', 'views', 'ask.html');
     let askHTML = readFileSync(askPath, 'utf-8');
 
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+
     askHTML = askHTML
         .replace(/\{\{PROJECT_NAME\}\}/g, extractRepoName(project.gitUrl))
         .replace(/\{\{REPO_NAME\}\}/g, extractRepoName(project.gitUrl))
@@ -1271,7 +1279,8 @@ app.get('/ask/:projectId', requireSessionUser, (req: Request, res: Response) => 
         .replace(/\{\{PROJECT_ID\}\}/g, project.id)
         .replace(/\{\{PROJECT_BRANCH\}\}/g, project.branch)
         .replace(/\{\{MESSAGES\}\}/g, messagesHTML)
-        .replace(/\{\{SYSTEM_PROMPT\}\}/g, renderMarkdown(systemPrompt)); // Render markdown for system prompt
+        .replace(/\{\{SYSTEM_PROMPT\}\}/g, renderMarkdown(systemPrompt))
+        .replace(/\{\{BASE_URL\}\}/g, baseUrl);
 
     res.send(askHTML);
 });

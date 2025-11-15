@@ -109,7 +109,7 @@
           <div class="curl-example">
             <h3><i data-lucide="terminal" class="icon"></i> API Example (curl)</h3>
             <div class="curl-code-container">
-              <pre id="curl-code">curl -X POST "https://promptly.snowmonkey.co.uk/ask/{{PROJECT_ID}}" \
+              <pre id="curl-code">curl -X POST "{{BASE_URL}}/ask/{{PROJECT_ID}}" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $FIREBASE_ID_TOKEN" \
   -d '{"message": "How should I implement authentication?"}' \
