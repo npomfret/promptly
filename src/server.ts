@@ -717,7 +717,7 @@ function generateProjectsTable(): string {
     <tr class="project-item">
       <td>
         <a href="/projects/${p.id}/edit">${p.id}</a>
-        <button onclick="copyProjectIdFromTable('${p.id}', this)" class="btn-icon" title="Copy Project ID" style="margin-left: 8px;">
+        <button type="button" onclick="copyProjectIdFromTable('${p.id}', this); return false;" class="btn-icon copy-project-btn" title="Copy Project ID" style="margin-left: 8px;">
           <i data-lucide="copy" class="icon" style="width: 14px; height: 14px;"></i>
         </button>
         ${statusBadge}

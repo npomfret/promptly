@@ -52,7 +52,14 @@
   <script type="module" src="/js/ui.js"></script>
   <script>
     lucide.createIcons();
-    document.body.addEventListener('htmx:afterSwap', () => {
+
+    document.body.addEventListener('htmx:afterSwap', (event) => {
+      console.log('[DEBUG] HTMX afterSwap - reinitializing Lucide icons');
+      lucide.createIcons();
+    });
+
+    // Also reinitialize on afterSettle for good measure
+    document.body.addEventListener('htmx:afterSettle', () => {
       lucide.createIcons();
     });
 

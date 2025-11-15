@@ -361,12 +361,21 @@ body.chat-body {
   cursor: pointer;
   transition: all 180ms ease;
   vertical-align: middle;
+  color: var(--text-primary);
+  min-width: 28px;
+  min-height: 28px;
 }
 
 .btn-icon:hover {
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.2);
   transform: translateY(-1px);
+}
+
+/* Fallback content for copy buttons if icon doesn't load */
+.btn-icon.copy-project-btn:empty::before {
+  content: "📋";
+  font-size: 14px;
 }
 
 /* HTMX indicators */
