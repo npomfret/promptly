@@ -11,6 +11,7 @@ services:
       - HISTORY_DIR=/app/data/history
       - PORT=3000
       - SESSION_SECRET=${SESSION_SECRET:-}
+      - NODE_ENV=production
     volumes:
       # Persist cloned repositories
       - ./data/checkouts:/app/data/checkouts
@@ -22,6 +23,7 @@ services:
       - ./prompts:/app/prompts:ro
     networks:
       - promptly-network
+      - space-in-pigs_default
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
       interval: 30s
@@ -53,3 +55,5 @@ services:
 networks:
   promptly-network:
     driver: bridge
+  space-in-pigs_default:
+    external: true
