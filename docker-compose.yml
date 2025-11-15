@@ -31,27 +31,6 @@ services:
       retries: 3
       start_period: 40s
 
-  proxy:
-    image: nginx:1.27-alpine
-    container_name: promptly-proxy
-    restart: unless-stopped
-    depends_on:
-      - promptly
-    entrypoint: ["/bin/sh", "/etc/nginx/entrypoint.sh"]
-    environment:
-      DISABLE_TLS: '0'
-    ports:
-      - '80:80'
-      - '443:443'
-    volumes:
-      - ./infra/nginx/default.conf:/etc/nginx/templates/default.conf:ro
-      - ./infra/nginx/local.conf:/etc/nginx/templates/local.conf:ro
-      - ./infra/nginx/entrypoint.sh:/etc/nginx/entrypoint.sh:ro
-      - /etc/letsencrypt:/etc/letsencrypt:ro
-      - /var/lib/letsencrypt/webroot:/var/www/letsencrypt:ro
-    networks:
-      - promptly-network
-
 networks:
   promptly-network:
     driver: bridge
