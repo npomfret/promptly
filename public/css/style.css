@@ -718,8 +718,10 @@ tbody td a:hover {
   background: rgba(2, 6, 23, 0.9);
   font-family: 'JetBrains Mono', 'SFMono-Regular', Menlo, monospace;
   font-size: 0.95rem;
-  white-space: pre;
+  white-space: pre !important;
   overflow-x: auto;
+  line-height: 1.6;
+  display: block;
 }
 
 .copy-btn {
