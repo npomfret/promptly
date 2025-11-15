@@ -117,25 +117,34 @@ ssh "$SERVER" "mkdir -p $DEPLOY_DIR"
 echo -e "${GREEN}✓${NC} Directory created: $DEPLOY_DIR"
 
 echo ""
-echo -e "${BLUE}[4/6]${NC} Copying application files..."
-# Copy application files
+echo -e "${BLUE}[4/6]${NC} Pulling latest code from git..."
+ssh "$SERVER" bash <<ENDSSH
+    cd $DEPLOY_DIR
+
+    # Initialize git if needed
+    if [ ! -d .git ]; then
+        echo "Initializing git repository..."
+        git init
+        git remote add origin $REPO_URL
+    fi
+
+    # Pull latest changes
+    echo "Fetching latest code..."
+    git fetch origin
+    git reset --hard origin/$BRANCH
+ENDSSH
+
+echo -e "${GREEN}✓${NC} Code pulled from git"
+
+echo ""
+echo -e "${BLUE}[4.5/6]${NC} Copying config files..."
+# Only copy config files (not source code)
 scp -r \
-    src \
-    prompts \
-    views \
-    public \
-    config \
-    package.json \
-    package-lock.json \
-    tsconfig.json \
-    Dockerfile \
-    docker-compose.yml \
-    .dockerignore \
     .env \
     projects.json \
-    "$SERVER:$DEPLOY_DIR/"
+    "$SERVER:$DEPLOY_DIR/" 2>/dev/null || echo "Config files not found locally (using server versions)"
 
-echo -e "${GREEN}✓${NC} Files copied successfully"
+echo -e "${GREEN}✓${NC} Config files updated"
 
 echo ""
 echo -e "${BLUE}[5/6]${NC} Creating data directories..."
