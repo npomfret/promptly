@@ -123,10 +123,18 @@ snowmonkey-proxy (nginx) → promptly container
 ```
 
 The reverse proxy handles:
-- SSL/TLS termination
+- SSL/TLS termination (Let's Encrypt certificates)
 - Domain-based routing
 - WebSocket support
 - Shared by multiple applications
+
+SSL certificates are managed by `snowmonkey-proxy-common`. To issue or renew certificates, use the scripts in that project:
+```bash
+# On the server
+cd /opt/snowmonkey-proxy
+./scripts/cert-issue.sh promptly.snowmonkey.co.uk
+./scripts/cert-renew.sh
+```
 
 ## Deployment
 
