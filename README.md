@@ -169,6 +169,7 @@ This rebuilds the Docker image on the server using existing files and restarts c
 | `./deploy.sh` | **Full deployment** - copies files, rebuilds, restarts |
 | `./scripts/rebuild.sh` | **Rebuild only** - rebuilds Docker image on server (no file copy) |
 | `./scripts/status.sh` | Check health and container status |
+| `./scripts/test-ask.sh` | Quick API test - sends "hello" to ask endpoint |
 | `./scripts/logs.sh` | Stream live logs |
 | `./scripts/restart.sh` | Restart containers without rebuild |
 | `./scripts/update-env.sh` | Push `.env` changes to server |
