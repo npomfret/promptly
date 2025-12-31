@@ -36,6 +36,20 @@ npm run dev      # Development with watch mode
 npm start        # Production mode
 ```
 
+## Deployment
+
+```bash
+./deploy.sh      # Full automated deployment
+```
+
+Or manual steps:
+```bash
+git push origin main
+ssh root@promptly.snowmonkey.co.uk "cd /opt/promptly && git pull && docker build -t promptly:latest . && docker stop promptly && docker rm promptly && docker compose up -d"
+```
+
+Note: Server has older buildx version, so use `docker build` directly instead of `docker-compose build`.
+
 Required environment variables (see `.env.example`):
 - `GEMINI_API_KEY` - Google AI API key
 - `CHECKOUT_DIR` - Directory for cloned repositories
