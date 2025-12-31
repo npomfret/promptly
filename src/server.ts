@@ -1354,12 +1354,19 @@ app.post('/api/projects', enforceProjectRateLimit, async (req: Request, res: Res
     try {
         const { gitUrl, branch, accessToken } = req.body;
 
+        console.log(`[DEBUG] POST /api/projects - body keys: ${Object.keys(req.body).join(', ')}`);
+        console.log(`[DEBUG] POST /api/projects - gitUrl: ${gitUrl ? `"${gitUrl.substring(0, 50)}..."` : '(missing)'}`);
+        console.log(`[DEBUG] POST /api/projects - branch: ${branch || '(not provided)'}`);
+        console.log(`[DEBUG] POST /api/projects - accessToken: ${accessToken ? '(provided)' : '(not provided)'}`);
+
         if (!gitUrl) {
+            console.log(`[WARN] POST /api/projects - 400: Git URL is required`);
             return res.status(400).send('<p class="error">Git URL is required</p>');
         }
 
         // Validate URL format (must be HTTPS for PAT to work)
         if (accessToken && accessToken.trim() && !gitUrl.startsWith('https://')) {
+            console.log(`[WARN] POST /api/projects - 400: Access token requires HTTPS URL`);
             return res.status(400).send('<p class="error">When using a Personal Access Token, Git URL must use HTTPS format (e.g., https://github.com/user/repo.git)</p>');
         }
 

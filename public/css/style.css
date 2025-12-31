@@ -469,6 +469,10 @@ tbody td a:hover {
   border-radius: var(--radius);
 }
 
+.form-error-container:not(:empty) {
+  margin-bottom: 1rem;
+}
+
 .alert {
   border-radius: var(--radius);
   padding: 1rem 1.25rem;

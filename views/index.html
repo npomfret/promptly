@@ -47,8 +47,11 @@
           </div>
         </div>
         <form hx-post="/api/projects"
-              hx-on::after-request="if(event.detail.successful) window.location.href='/projects'"
+              hx-target="#form-error"
+              hx-swap="innerHTML"
+              hx-on::before-swap="if(!event.detail.isError) { window.location.href='/projects'; event.preventDefault(); }"
               data-auth-guard="true">
+          <div id="form-error" class="form-error-container"></div>
           <div class="form-group">
             <label for="gitUrl">Git URL</label>
             <input type="text" id="gitUrl" name="gitUrl" placeholder="https://github.com/user/repo.git" required>
