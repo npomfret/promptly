@@ -1296,6 +1296,74 @@ app.get('/ask/:projectId', requireSessionUser, (req: Request, res: Response) => 
 });
 
 // ============================================================================
+// Public API Routes (no auth required)
+// ============================================================================
+
+/**
+ * HTMX: Send ask message and return new message HTML (PUBLIC - no auth)
+ */
+app.post('/api/ask-message', async (req: Request, res: Response) => {
+    try {
+        const { message, projectId } = req.body;
+
+        if (!projectId) {
+            return res.status(400).send('<p class="error">Project ID is required</p>');
+        }
+
+        if (!message || typeof message !== 'string') {
+            return res.status(400).send('<p class="error">Message is required</p>');
+        }
+
+        const processedMessage = processUserMessage(message);
+
+        const sessionId = req.session.id;
+        const sessionData = await getChatSession(sessionId, projectId, 'ask');
+
+        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
+        console.log(`[${new Date().toISOString()}] Session: ${sessionId}:${projectId}:ask`);
+        console.log(`[${new Date().toISOString()}] Question:`);
+        console.log(processedMessage);
+        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
+
+        // Send processed message and get response
+        const response = await sendMessageWithRetry(sessionData, processedMessage, projectId, sessionId);
+
+        console.log(`[${new Date().toISOString()}] Response:`);
+        console.log(response);
+        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════\n`);
+
+        // Store in history (using processed message)
+        const timestamp = new Date();
+        const userMessage = { role: 'user' as const, message: processedMessage, timestamp };
+        const modelMessage = { role: 'model' as const, message: response, timestamp };
+
+        sessionData.history.push(userMessage, modelMessage);
+
+        // Write to history file if configured
+        const project = projects.get(projectId);
+        writeHistoryEntry({
+            sessionId,
+            projectId,
+            timestamp,
+            request: processedMessage,
+            response,
+            messageCount: sessionData.history.length,
+            cachedContentName: project?.cachedContent?.name,
+            mode: 'ask',
+        });
+
+        // Return HTML for both messages (showing processed message)
+        const userHTML = generateMessageHTML('user', processedMessage, timestamp, sessionId);
+        const modelHTML = generateMessageHTML('model', response, timestamp, sessionId);
+
+        res.send(userHTML + modelHTML);
+    } catch (error) {
+        console.error('[ERROR] Failed to process ask:', error);
+        res.status(500).send(`<p class="error">Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}</p>`);
+    }
+});
+
+// ============================================================================
 // API Authentication Boundary
 // ============================================================================
 
@@ -1478,70 +1546,6 @@ app.post('/api/chat-message', async (req: Request, res: Response) => {
         res.send(userHTML + modelHTML);
     } catch (error) {
         console.error('[ERROR] Failed to process chat:', error);
-        res.status(500).send(`<p class="error">Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}</p>`);
-    }
-});
-
-/**
- * HTMX: Send ask message and return new message HTML
- */
-app.post('/api/ask-message', async (req: Request, res: Response) => {
-    try {
-        const { message, projectId } = req.body;
-
-        if (!projectId) {
-            return res.status(400).send('<p class="error">Project ID is required</p>');
-        }
-
-        if (!message || typeof message !== 'string') {
-            return res.status(400).send('<p class="error">Message is required</p>');
-        }
-
-        const processedMessage = processUserMessage(message);
-
-        const sessionId = req.session.id;
-        const sessionData = await getChatSession(sessionId, projectId, 'ask');
-
-        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
-        console.log(`[${new Date().toISOString()}] Session: ${sessionId}:${projectId}:ask`);
-        console.log(`[${new Date().toISOString()}] Question:`);
-        console.log(processedMessage);
-        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
-
-        // Send processed message and get response
-        const response = await sendMessageWithRetry(sessionData, processedMessage, projectId, sessionId);
-
-        console.log(`[${new Date().toISOString()}] Response:`);
-        console.log(response);
-        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════\n`);
-
-        // Store in history (using processed message)
-        const timestamp = new Date();
-        const userMessage = { role: 'user' as const, message: processedMessage, timestamp };
-        const modelMessage = { role: 'model' as const, message: response, timestamp };
-
-        sessionData.history.push(userMessage, modelMessage);
-
-        // Write to history file if configured
-        const project = projects.get(projectId);
-        writeHistoryEntry({
-            sessionId,
-            projectId,
-            timestamp,
-            request: processedMessage,
-            response,
-            messageCount: sessionData.history.length,
-            cachedContentName: project?.cachedContent?.name,
-            mode: 'ask',
-        });
-
-        // Return HTML for both messages (showing processed message)
-        const userHTML = generateMessageHTML('user', processedMessage, timestamp, sessionId);
-        const modelHTML = generateMessageHTML('model', response, timestamp, sessionId);
-
-        res.send(userHTML + modelHTML);
-    } catch (error) {
-        console.error('[ERROR] Failed to process ask:', error);
         res.status(500).send(`<p class="error">Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}</p>`);
     }
 });
