@@ -1,20 +1,19 @@
-import { execSync } from 'child_process';
+import { runGitCommand } from './gitRunner.js';
 import { buildAuthenticatedGitUrl } from './projectManager.js';
 import type { Project } from './types.js';
 
 /**
  * Set remote URL with authentication if needed
  */
-function setAuthenticatedRemote(project: Project): void {
+async function setAuthenticatedRemote(project: Project): Promise<void> {
     if (!project.accessToken) {
         return; // No token, no need to update remote
     }
 
     const authUrl = buildAuthenticatedGitUrl(project.gitUrl, project.accessToken);
     try {
-        execSync(`git remote set-url origin "${authUrl}"`, {
+        await runGitCommand(['remote', 'set-url', 'origin', authUrl], {
             cwd: project.path,
-            stdio: 'pipe',
         });
     } catch (error) {
         console.warn(`[!] Failed to set authenticated remote for ${project.id}:`, error instanceof Error ? error.message : 'Unknown error');
@@ -28,30 +27,23 @@ function setAuthenticatedRemote(project: Project): void {
 export async function checkForUpdates(project: Project): Promise<boolean> {
     try {
         // Set authenticated remote URL if token is available
-        setAuthenticatedRemote(project);
+        await setAuthenticatedRemote(project);
 
         // Fetch latest from remote (doesn't modify working tree)
-        execSync('git fetch origin', {
+        await runGitCommand(['fetch', 'origin'], {
             cwd: project.path,
-            stdio: 'pipe',
-            timeout: 30000, // 30 second timeout
+            timeoutMs: 30000, // 30 second timeout
         });
 
         // Get local HEAD commit
-        const localCommit = execSync('git rev-parse HEAD', {
+        const localCommit = (await runGitCommand(['rev-parse', 'HEAD'], {
             cwd: project.path,
-            encoding: 'utf-8',
-            stdio: 'pipe',
-        })
-            .trim();
+        })).stdout.trim();
 
         // Get remote HEAD commit for the tracked branch
-        const remoteCommit = execSync(`git rev-parse origin/${project.branch}`, {
+        const remoteCommit = (await runGitCommand(['rev-parse', `origin/${project.branch}`], {
             cwd: project.path,
-            encoding: 'utf-8',
-            stdio: 'pipe',
-        })
-            .trim();
+        })).stdout.trim();
 
         // If commits differ, there are updates
         return localCommit !== remoteCommit;
@@ -70,12 +62,11 @@ export async function pullUpdates(project: Project): Promise<boolean> {
         console.log(`[...] Pulling updates for project ${project.id}...`);
 
         // Set authenticated remote URL if token is available
-        setAuthenticatedRemote(project);
+        await setAuthenticatedRemote(project);
 
-        execSync(`git pull origin ${project.branch}`, {
+        await runGitCommand(['pull', 'origin', project.branch], {
             cwd: project.path,
-            stdio: 'pipe',
-            timeout: 60000, // 60 second timeout
+            timeoutMs: 60000, // 60 second timeout
         });
 
         // Update last updated timestamp
@@ -98,28 +89,38 @@ export function startWatching(
     intervalMinutes: number = 1,
 ): NodeJS.Timeout {
     const intervalMs = intervalMinutes * 60 * 1000;
+    let isRunning = false;
 
     console.log(`[✓] Started repository watcher (checking every ${intervalMinutes} minute(s))`);
 
     const watchInterval = setInterval(async () => {
-        for (const [projectId, project] of projects.entries()) {
-            try {
-                const hasUpdates = await checkForUpdates(project);
+        if (isRunning) {
+            console.warn('[!] Repo watcher tick skipped because previous run is still in progress');
+            return;
+        }
+        isRunning = true;
+        try {
+            for (const [projectId, project] of projects.entries()) {
+                try {
+                    const hasUpdates = await checkForUpdates(project);
 
-                if (hasUpdates) {
-                    console.log(`[!] Updates detected for project ${projectId}`);
+                    if (hasUpdates) {
+                        console.log(`[!] Updates detected for project ${projectId}`);
 
-                    const pullSuccess = await pullUpdates(project);
+                        const pullSuccess = await pullUpdates(project);
 
-                    if (pullSuccess) {
-                        // Mark cache as stale instead of refreshing immediately
-                        project.cacheStale = true;
-                        console.log(`[✓] Project ${projectId} updated and marked stale (cache will refresh on next request)`);
+                        if (pullSuccess) {
+                            // Mark cache as stale instead of refreshing immediately
+                            project.cacheStale = true;
+                            console.log(`[✓] Project ${projectId} updated and marked stale (cache will refresh on next request)`);
+                        }
                     }
+                } catch (error) {
+                    console.error(`[ERROR] Repo watcher failed for project ${projectId}:`, error instanceof Error ? error.message : 'Unknown error');
                 }
-            } catch (error) {
-                console.error(`[ERROR] Repo watcher failed for project ${projectId}:`, error instanceof Error ? error.message : 'Unknown error');
             }
+        } finally {
+            isRunning = false;
         }
     }, intervalMs);
 

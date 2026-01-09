@@ -1,7 +1,7 @@
-import { execSync } from 'child_process';
 import { createHash } from 'crypto';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { GitCommandError, runGitCommand } from './gitRunner.js';
 import { Project, ProjectConfig, ProjectsConfigFile } from './types.js';
 
 const PROJECTS_CONFIG_FILE = 'projects.json';
@@ -154,13 +154,14 @@ export async function cloneRepository(
         // Clone the repository (use authenticated URL)
         console.log(`Cloning ${cleanGitUrl(gitUrl)} to ${targetPath}...`);
         try {
-            execSync(`git clone --branch ${branch} --depth 1 "${authGitUrl}" "${targetPath}"`, {
-                stdio: 'pipe',
-                encoding: 'utf-8',
-            });
+            await runGitCommand(['clone', '--branch', branch, '--depth', '1', authGitUrl, targetPath]);
             console.log(`Successfully cloned ${cleanGitUrl(gitUrl)}`);
-        } catch (cloneError: any) {
-            const errorOutput = cloneError.stderr || cloneError.stdout || cloneError.message;
+        } catch (cloneError: unknown) {
+            const errorOutput = cloneError instanceof GitCommandError
+                ? cloneError.stderr || cloneError.stdout || cloneError.message
+                : cloneError instanceof Error
+                    ? cloneError.message
+                    : 'Unknown error';
             console.error(`[ERROR] Git clone failed: ${errorOutput}`);
             throw new Error(`Failed to clone repository ${cleanGitUrl(gitUrl)}: ${errorOutput}`);
         }
@@ -175,7 +176,7 @@ export async function cloneRepository(
 export async function updateRepository(projectPath: string): Promise<void> {
     try {
         console.log(`Updating repository at ${projectPath}...`);
-        execSync('git pull', {
+        await runGitCommand(['pull'], {
             cwd: projectPath,
             stdio: 'inherit',
         });

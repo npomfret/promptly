@@ -23,6 +23,7 @@ import {
 import type { AuthedRequest } from './auth.js';
 import { getFirebaseClientConfig, requireAuth } from './auth.js';
 import { startWatching } from './repoWatcher.js';
+import { runGitCommand } from './gitRunner.js';
 import type {
     AddProjectRequest,
     AddProjectResponse,
@@ -127,7 +128,7 @@ function loadSystemPrompt(projectDir: string): string {
 /**
  * Gather project context from PROJECT_DIR
  */
-function gatherProjectContext(projectDir: string): string {
+async function gatherProjectContext(projectDir: string): Promise<string> {
     console.log(`[...] Gathering project context from: ${projectDir}`);
 
     const context: string[] = [];
@@ -136,16 +137,17 @@ function gatherProjectContext(projectDir: string): string {
 
     // Get git tracked files
     try {
-        const gitFiles = execSync('git ls-files', {
+        const gitFilesResult = await runGitCommand(['ls-files'], {
             cwd: projectDir,
-            encoding: 'utf-8',
-            maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+            maxBufferBytes: 10 * 1024 * 1024, // 10MB buffer
         });
+        const gitFiles = gitFilesResult.stdout.trim();
         context.push('## Git Tracked Files');
         context.push('```');
-        context.push(gitFiles.trim());
+        context.push(gitFiles);
         context.push('```\n');
-        console.log(`[✓] Found ${gitFiles.split('\n').length} git-tracked files`);
+        const fileCount = gitFiles.length > 0 ? gitFiles.split('\n').length : 0;
+        console.log(`[✓] Found ${fileCount} git-tracked files`);
     } catch (error) {
         console.warn('[!] Could not get git tracked files:', error instanceof Error ? error.message : 'Unknown error');
         context.push('## Git Tracked Files');
@@ -301,7 +303,7 @@ async function createCachedContent(project: Project): Promise<any> {
     console.log(`[...] Creating cached content for project ${project.id}...`);
 
     const systemPrompt = loadSystemPrompt(project.path);
-    const projectContext = gatherProjectContext(project.path);
+    const projectContext = await gatherProjectContext(project.path);
 
     const cacheResult = await cacheManager.create({
         model: 'gemini-2.5-flash',
