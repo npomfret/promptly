@@ -27,15 +27,9 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
-# Check if projects.json exists
+# Note: projects.json is not required locally as it will be managed on the server
 if [ ! -f projects.json ]; then
-    echo -e "${YELLOW}Warning: projects.json not found. Using example file.${NC}"
-    if [ -f projects.json.example ]; then
-        cp projects.json.example projects.json
-    else
-        echo -e "${RED}Error: Neither projects.json nor projects.json.example found!${NC}"
-        exit 1
-    fi
+    echo -e "${YELLOW}Note: projects.json not found locally. This is fine - it will be managed on the server.${NC}"
 fi
 
 echo -e "${BLUE}[1/6]${NC} Testing SSH connection..."
@@ -45,45 +39,6 @@ else
     echo -e "${RED}✗${NC} Cannot connect to $SERVER"
     echo "Please check your SSH credentials and network connection."
     exit 1
-fi
-
-echo ""
-# Ask if user wants to pull config files from server
-if ssh "$SERVER" "[ -f $DEPLOY_DIR/.env ] || [ -f $DEPLOY_DIR/projects.json ]" 2>/dev/null; then
-    echo -e "${YELLOW}Configuration files exist on the server.${NC}"
-    echo "Deploying will overwrite server config with your local files."
-    echo ""
-    read -p "Do you want to pull server config files to your local machine first? (y/N): " -n 1 -r
-    echo ""
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo ""
-        echo -e "${BLUE}Pulling configuration files from server...${NC}"
-
-        # Create backups of local files if they exist
-        if [ -f .env ]; then
-            echo -e "${BLUE}Creating backup:${NC} .env -> .env.backup"
-            cp .env .env.backup
-        fi
-
-        if [ -f projects.json ]; then
-            echo -e "${BLUE}Creating backup:${NC} projects.json -> projects.json.backup"
-            cp projects.json projects.json.backup
-        fi
-
-        # Pull .env
-        if ssh "$SERVER" "[ -f $DEPLOY_DIR/.env ]"; then
-            scp "$SERVER:$DEPLOY_DIR/.env" .env
-            echo -e "${GREEN}✓${NC} Downloaded .env"
-        fi
-
-        # Pull projects.json
-        if ssh "$SERVER" "[ -f $DEPLOY_DIR/projects.json ]"; then
-            scp "$SERVER:$DEPLOY_DIR/projects.json" projects.json
-            echo -e "${GREEN}✓${NC} Downloaded projects.json"
-        fi
-
-        echo ""
-    fi
 fi
 
 echo ""
@@ -117,24 +72,32 @@ ssh "$SERVER" "mkdir -p $DEPLOY_DIR"
 echo -e "${GREEN}✓${NC} Directory created: $DEPLOY_DIR"
 
 echo ""
-echo -e "${BLUE}[4/6]${NC} Copying application files..."
-# Copy application files
-scp -r \
-    src \
-    prompts \
-    views \
-    public \
-    package.json \
-    package-lock.json \
-    tsconfig.json \
-    Dockerfile \
-    docker-compose.yml \
-    .dockerignore \
-    .env \
-    projects.json \
-    "$SERVER:$DEPLOY_DIR/"
+echo -e "${BLUE}[4/6]${NC} Pulling latest code from git..."
+ssh "$SERVER" bash <<ENDSSH
+    cd $DEPLOY_DIR
 
-echo -e "${GREEN}✓${NC} Files copied successfully"
+    # Initialize git if needed
+    if [ ! -d .git ]; then
+        echo "Initializing git repository..."
+        git init
+        git remote add origin $REPO_URL
+    fi
+
+    # Pull latest changes
+    echo "Fetching latest code..."
+    git fetch origin
+    git reset --hard origin/$BRANCH
+ENDSSH
+
+echo -e "${GREEN}✓${NC} Code pulled from git"
+
+echo ""
+echo -e "${BLUE}[4.5/6]${NC} Copying config files..."
+# Only copy .env file (not projects.json to preserve server-specific configuration)
+scp .env "$SERVER:$DEPLOY_DIR/" 2>/dev/null || echo ".env file not found locally (using server version)"
+
+echo -e "${GREEN}✓${NC} Config files updated"
+echo -e "${YELLOW}Note:${NC} projects.json is not copied to preserve server-specific project configuration"
 
 echo ""
 echo -e "${BLUE}[5/6]${NC} Creating data directories..."

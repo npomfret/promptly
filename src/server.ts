@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { GoogleAICacheManager } from '@google/generative-ai/server';
 import { execSync } from 'child_process';
+import type { DecodedIdToken } from 'firebase-admin/auth';
 import dotenv from 'dotenv';
 import express, { NextFunction, Request, Response } from 'express';
 import session from 'express-session';
@@ -19,7 +20,10 @@ import {
     removeProject as removeProjectFromConfig,
     saveProjectsConfig,
 } from './projectManager.js';
+import type { AuthedRequest } from './auth.js';
+import { getFirebaseClientConfig, requireAuth } from './auth.js';
 import { startWatching } from './repoWatcher.js';
+import { runGitCommand } from './gitRunner.js';
 import type {
     AddProjectRequest,
     AddProjectResponse,
@@ -124,7 +128,7 @@ function loadSystemPrompt(projectDir: string): string {
 /**
  * Gather project context from PROJECT_DIR
  */
-function gatherProjectContext(projectDir: string): string {
+async function gatherProjectContext(projectDir: string): Promise<string> {
     console.log(`[...] Gathering project context from: ${projectDir}`);
 
     const context: string[] = [];
@@ -133,16 +137,17 @@ function gatherProjectContext(projectDir: string): string {
 
     // Get git tracked files
     try {
-        const gitFiles = execSync('git ls-files', {
+        const gitFilesResult = await runGitCommand(['ls-files'], {
             cwd: projectDir,
-            encoding: 'utf-8',
-            maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+            maxBufferBytes: 10 * 1024 * 1024, // 10MB buffer
         });
+        const gitFiles = gitFilesResult.stdout.trim();
         context.push('## Git Tracked Files');
         context.push('```');
-        context.push(gitFiles.trim());
+        context.push(gitFiles);
         context.push('```\n');
-        console.log(`[✓] Found ${gitFiles.split('\n').length} git-tracked files`);
+        const fileCount = gitFiles.length > 0 ? gitFiles.split('\n').length : 0;
+        console.log(`[✓] Found ${fileCount} git-tracked files`);
     } catch (error) {
         console.warn('[!] Could not get git tracked files:', error instanceof Error ? error.message : 'Unknown error');
         context.push('## Git Tracked Files');
@@ -206,6 +211,8 @@ const SESSION_SECRET = process.env.SESSION_SECRET || `gemini-session-secret-${uu
 const SESSION_MAX_AGE = 24 * 60 * 60 * 1000; // 24 hours
 const CLEANUP_INTERVAL = 60 * 60 * 1000; // 1 hour
 const REPO_CHECK_INTERVAL = 1; // Check for repo updates every 1 minute
+const PROJECT_RATE_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+const PROJECT_RATE_LIMIT = 3;
 
 // Validation
 if (!API_KEY) {
@@ -254,6 +261,41 @@ const projects = new Map<string, Project>();
 // Store for long-lived chat sessions (key: sessionId:projectId)
 const chatSessions = new Map<string, SessionData>();
 
+const projectAddAttempts = new Map<string, number[]>();
+
+function getClientIp(req: Request): string {
+    const forwarded = req.headers['x-forwarded-for'];
+    if (typeof forwarded === 'string' && forwarded.length > 0) {
+        return forwarded.split(',')[0].trim();
+    }
+    if (Array.isArray(forwarded) && forwarded.length > 0) {
+        return forwarded[0];
+    }
+    return req.socket.remoteAddress || req.ip || 'unknown';
+}
+
+function enforceProjectRateLimit(req: Request, res: Response, next: NextFunction): void {
+    const ip = getClientIp(req);
+    const now = Date.now();
+    const attempts = projectAddAttempts.get(ip) ?? [];
+    const recentAttempts = attempts.filter(timestamp => now - timestamp < PROJECT_RATE_WINDOW_MS);
+
+    if (recentAttempts.length >= PROJECT_RATE_LIMIT) {
+        const message = 'Too many project registrations from this IP. Try again in a few minutes.';
+        const acceptsHtml = typeof req.headers.accept === 'string' && req.headers.accept.includes('text/html');
+        if (acceptsHtml) {
+            res.status(429).send(`<p class="error">${escapeHtml(message)}</p>`);
+            return;
+        }
+        res.status(429).json({ error: message });
+        return;
+    }
+
+    recentAttempts.push(now);
+    projectAddAttempts.set(ip, recentAttempts);
+    next();
+}
+
 /**
  * Create or refresh cached content with project context for a specific project
  */
@@ -261,7 +303,7 @@ async function createCachedContent(project: Project): Promise<any> {
     console.log(`[...] Creating cached content for project ${project.id}...`);
 
     const systemPrompt = loadSystemPrompt(project.path);
-    const projectContext = gatherProjectContext(project.path);
+    const projectContext = await gatherProjectContext(project.path);
 
     const cacheResult = await cacheManager.create({
         model: 'gemini-2.5-flash',
@@ -288,6 +330,9 @@ async function createCachedContent(project: Project): Promise<any> {
     return cacheResult;
 }
 
+// Trust proxy headers (we're behind nginx reverse proxy)
+app.set('trust proxy', true);
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -298,14 +343,25 @@ app.use(express.static(join(__dirname, '..', 'public')));
 // Pretty-print JSON responses
 app.set('json spaces', 2);
 
+app.get('/config/firebase', (_req: Request, res: Response) => {
+    res.json(getFirebaseClientConfig());
+});
+
+// Determine if we're in production (behind HTTPS proxy)
+const isProduction = process.env.NODE_ENV === 'production';
+const secureCookies = process.env.SECURE_COOKIES === 'true' || isProduction;
+
 app.use(
     session({
         secret: SESSION_SECRET,
         resave: false,
-        saveUninitialized: true,
+        saveUninitialized: false, // Don't save empty sessions
         cookie: {
-            secure: false, // Set to true if using HTTPS
+            secure: secureCookies, // Dynamic based on environment
+            httpOnly: true,
             maxAge: SESSION_MAX_AGE,
+            sameSite: 'lax',
+            ...(process.env.COOKIE_DOMAIN && { domain: process.env.COOKIE_DOMAIN }),
         },
     }),
 );
@@ -314,7 +370,22 @@ app.use(
 declare module 'express-session' {
     interface SessionData {
         id: string;
+        firebaseUser?: DecodedIdToken;
     }
+}
+
+function requireSessionUser(req: Request, res: Response, next: NextFunction): void {
+    if (req.session?.firebaseUser) {
+        next();
+        return;
+    }
+
+    if (req.accepts('html')) {
+        res.redirect('/?auth=required');
+        return;
+    }
+
+    res.status(401).json({ error: 'Authentication required' });
 }
 
 /**
@@ -646,7 +717,13 @@ function generateProjectsTable(): string {
 
             return `
     <tr class="project-item">
-      <td><a href="/projects/${p.id}/edit">${p.id}</a> ${statusBadge}</td>
+      <td>
+        <a href="/projects/${p.id}/edit">${p.id}</a>
+        <button type="button" onclick="copyProjectIdFromTable('${p.id}', this); return false;" class="btn-icon copy-project-btn" title="Copy Project ID" style="margin-left: 8px;">
+          <i data-lucide="copy" class="icon" style="width: 14px; height: 14px;"></i>
+        </button>
+        ${statusBadge}
+      </td>
       <td>${redactGitUrl(p.gitUrl)}</td>
       <td>${p.branch}</td>
       <td class="text-muted">${timeAgo(new Date(p.lastUpdated))}</td>
@@ -767,6 +844,13 @@ function escapeHtml(text: string): string {
         .replace(/\n/g, '<br>');
 }
 
+function resolveNextUrl(input: unknown): string {
+    if (typeof input === 'string' && input.startsWith('/') && !input.startsWith('//')) {
+        return input;
+    }
+    return '/';
+}
+
 function clearSessionsForProject(projectId: string): number {
     let clearedCount = 0;
     for (const key of chatSessions.keys()) {
@@ -785,22 +869,53 @@ function clearSessionsForProject(projectId: string): number {
 // ============================================================================
 
 /**
- * Serve the main project list page
+ * Serve the main dashboard page (public, but functionality requires auth)
  */
-app.get('/', (_req: Request, res: Response) => {
+app.get('/', (req: Request, res: Response) => {
     const indexPath = join(__dirname, '..', 'views', 'index.html');
-    res.sendFile(indexPath);
+    let indexHTML = readFileSync(indexPath, 'utf-8');
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    indexHTML = indexHTML.replace(/\{\{BASE_URL\}\}/g, baseUrl);
+    res.send(indexHTML);
+});
+
+app.get('/login', (req: Request, res: Response) => {
+    if (req.session?.firebaseUser) {
+        return res.redirect(resolveNextUrl(req.query.next));
+    }
+    const loginPath = join(__dirname, '..', 'views', 'login.html');
+    res.sendFile(loginPath);
+});
+
+app.get('/register', (req: Request, res: Response) => {
+    if (req.session?.firebaseUser) {
+        return res.redirect(resolveNextUrl(req.query.next));
+    }
+    const registerPath = join(__dirname, '..', 'views', 'register.html');
+    res.sendFile(registerPath);
 });
 
 /**
  * Serve the projects list page
  */
-app.get('/projects', (_req: Request, res: Response) => {
+app.get('/projects', (req: Request, res: Response, next: NextFunction) => {
+    const acceptsHtml = typeof req.headers.accept === 'string' && req.headers.accept.toLowerCase().includes('text/html');
+    if (!acceptsHtml) {
+        next();
+        return;
+    }
+
+    if (!req.session?.firebaseUser) {
+        const next = encodeURIComponent('/projects');
+        res.redirect(`/login?next=${next}`);
+        return;
+    }
+
     const projectsPath = join(__dirname, '..', 'views', 'projects.html');
     res.sendFile(projectsPath);
 });
 
-app.get('/projects/:projectId/edit', (req: Request, res: Response) => {
+app.get('/projects/:projectId/edit', requireSessionUser, (req: Request, res: Response) => {
     const { projectId } = req.params;
     const project = projects.get(projectId);
 
@@ -825,7 +940,7 @@ app.get('/projects/:projectId/edit', (req: Request, res: Response) => {
     res.send(editPage);
 });
 
-app.post('/projects/:projectId/edit', async (req: Request, res: Response) => {
+app.post('/projects/:projectId/edit', requireSessionUser, async (req: Request, res: Response) => {
     try {
         const { projectId } = req.params;
         const project = projects.get(projectId);
@@ -859,12 +974,11 @@ app.post('/projects/:projectId/edit', async (req: Request, res: Response) => {
         }
 
         const cleanUrl = cleanGitUrl(trimmedGitUrl);
-        const newProjectId = generateProjectId(cleanUrl, normalizedBranch);
 
         const config = await loadProjectsConfig();
         const configIndex = config.projects.findIndex(p => {
             const storedBranch = p.branch || 'main';
-            const storedId = generateProjectId(cleanGitUrl(p.gitUrl), storedBranch);
+            const storedId = generateProjectId(cleanGitUrl(p.gitUrl), storedBranch, p.accessToken);
             return storedId === projectId;
         });
 
@@ -874,21 +988,7 @@ app.post('/projects/:projectId/edit', async (req: Request, res: Response) => {
             return res.status(404).send(html);
         }
 
-        if (newProjectId !== projectId) {
-            const conflict = config.projects.some((p, index) => {
-                if (index === configIndex) {
-                    return false;
-                }
-                const storedBranch = p.branch || 'main';
-                return generateProjectId(cleanGitUrl(p.gitUrl), storedBranch) === newProjectId;
-            });
-
-            if (conflict) {
-                const html = renderProjectEditPage(project, '<div class="alert error">Another project already uses that Git URL and branch.</div>');
-                return res.status(400).send(html);
-            }
-        }
-
+        // Determine the final token to persist
         let tokenToPersist: string | undefined;
         if (shouldClearToken) {
             tokenToPersist = undefined;
@@ -896,6 +996,25 @@ app.post('/projects/:projectId/edit', async (req: Request, res: Response) => {
             tokenToPersist = normalizedAccessToken;
         } else {
             tokenToPersist = project.accessToken;
+        }
+
+        // Generate new project ID with the final token
+        const newProjectId = generateProjectId(cleanUrl, normalizedBranch, tokenToPersist);
+
+        // Check for conflicts with other projects
+        if (newProjectId !== projectId) {
+            const conflict = config.projects.some((p, index) => {
+                if (index === configIndex) {
+                    return false;
+                }
+                const storedBranch = p.branch || 'main';
+                return generateProjectId(cleanGitUrl(p.gitUrl), storedBranch, p.accessToken) === newProjectId;
+            });
+
+            if (conflict) {
+                const html = renderProjectEditPage(project, '<div class="alert error">Another project already uses that Git URL, branch, and access token combination.</div>');
+                return res.status(400).send(html);
+            }
         }
 
         const updatedEntry: ProjectConfig = {
@@ -963,7 +1082,7 @@ app.post('/projects/:projectId/edit', async (req: Request, res: Response) => {
 /**
  * Serve the chat page for a specific project
  */
-app.get('/enhance/:projectId', (req: Request, res: Response) => {
+app.get('/enhance/:projectId', requireSessionUser, (req: Request, res: Response) => {
     const { projectId } = req.params;
     const project = projects.get(projectId);
 
@@ -1054,6 +1173,8 @@ app.get('/enhance/:projectId', (req: Request, res: Response) => {
     const chatPath = join(__dirname, '..', 'views', 'enhance.html');
     let chatHTML = readFileSync(chatPath, 'utf-8');
 
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+
     chatHTML = chatHTML
         .replace(/\{\{PROJECT_NAME\}\}/g, extractRepoName(project.gitUrl))
         .replace(/\{\{REPO_NAME\}\}/g, extractRepoName(project.gitUrl))
@@ -1061,7 +1182,8 @@ app.get('/enhance/:projectId', (req: Request, res: Response) => {
         .replace(/\{\{PROJECT_ID\}\}/g, project.id)
         .replace(/\{\{PROJECT_BRANCH\}\}/g, project.branch)
         .replace(/\{\{MESSAGES\}\}/g, messagesHTML)
-        .replace(/\{\{SYSTEM_PROMPT\}\}/g, renderMarkdown(systemPrompt)); // Render markdown for system prompt
+        .replace(/\{\{SYSTEM_PROMPT\}\}/g, renderMarkdown(systemPrompt))
+        .replace(/\{\{BASE_URL\}\}/g, baseUrl);
 
     res.send(chatHTML);
 });
@@ -1069,7 +1191,7 @@ app.get('/enhance/:projectId', (req: Request, res: Response) => {
 /**
  * Serve the ask page for a specific project
  */
-app.get('/ask/:projectId', (req: Request, res: Response) => {
+app.get('/ask/:projectId', requireSessionUser, (req: Request, res: Response) => {
     const { projectId } = req.params;
     const project = projects.get(projectId);
 
@@ -1160,6 +1282,8 @@ app.get('/ask/:projectId', (req: Request, res: Response) => {
     const askPath = join(__dirname, '..', 'views', 'ask.html');
     let askHTML = readFileSync(askPath, 'utf-8');
 
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+
     askHTML = askHTML
         .replace(/\{\{PROJECT_NAME\}\}/g, extractRepoName(project.gitUrl))
         .replace(/\{\{REPO_NAME\}\}/g, extractRepoName(project.gitUrl))
@@ -1167,9 +1291,123 @@ app.get('/ask/:projectId', (req: Request, res: Response) => {
         .replace(/\{\{PROJECT_ID\}\}/g, project.id)
         .replace(/\{\{PROJECT_BRANCH\}\}/g, project.branch)
         .replace(/\{\{MESSAGES\}\}/g, messagesHTML)
-        .replace(/\{\{SYSTEM_PROMPT\}\}/g, renderMarkdown(systemPrompt)); // Render markdown for system prompt
+        .replace(/\{\{SYSTEM_PROMPT\}\}/g, renderMarkdown(systemPrompt))
+        .replace(/\{\{BASE_URL\}\}/g, baseUrl);
 
     res.send(askHTML);
+});
+
+// ============================================================================
+// Public API Routes (no auth required)
+// ============================================================================
+
+/**
+ * HTMX: Send ask message and return new message HTML (PUBLIC - no auth)
+ */
+app.post('/api/ask-message', async (req: Request, res: Response) => {
+    try {
+        const { message, projectId } = req.body;
+
+        if (!projectId) {
+            return res.status(400).send('<p class="error">Project ID is required</p>');
+        }
+
+        if (!message || typeof message !== 'string') {
+            return res.status(400).send('<p class="error">Message is required</p>');
+        }
+
+        const processedMessage = processUserMessage(message);
+
+        const sessionId = req.session.id;
+        const sessionData = await getChatSession(sessionId, projectId, 'ask');
+
+        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
+        console.log(`[${new Date().toISOString()}] Session: ${sessionId}:${projectId}:ask`);
+        console.log(`[${new Date().toISOString()}] Question:`);
+        console.log(processedMessage);
+        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
+
+        // Send processed message and get response
+        const response = await sendMessageWithRetry(sessionData, processedMessage, projectId, sessionId);
+
+        console.log(`[${new Date().toISOString()}] Response:`);
+        console.log(response);
+        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════\n`);
+
+        // Store in history (using processed message)
+        const timestamp = new Date();
+        const userMessage = { role: 'user' as const, message: processedMessage, timestamp };
+        const modelMessage = { role: 'model' as const, message: response, timestamp };
+
+        sessionData.history.push(userMessage, modelMessage);
+
+        // Write to history file if configured
+        const project = projects.get(projectId);
+        writeHistoryEntry({
+            sessionId,
+            projectId,
+            timestamp,
+            request: processedMessage,
+            response,
+            messageCount: sessionData.history.length,
+            cachedContentName: project?.cachedContent?.name,
+            mode: 'ask',
+        });
+
+        // Return HTML for both messages (showing processed message)
+        const userHTML = generateMessageHTML('user', processedMessage, timestamp, sessionId);
+        const modelHTML = generateMessageHTML('model', response, timestamp, sessionId);
+
+        res.send(userHTML + modelHTML);
+    } catch (error) {
+        console.error('[ERROR] Failed to process ask:', error);
+        res.status(500).send(`<p class="error">Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}</p>`);
+    }
+});
+
+// ============================================================================
+// API Authentication Boundary
+// ============================================================================
+
+app.use('/api', requireAuth);
+
+app.post('/api/auth/session', (req: Request, res: Response) => {
+    const user = (req as AuthedRequest).user;
+    console.log('[DEBUG] POST /api/auth/session - Session ID:', req.sessionID);
+    console.log('[DEBUG] POST /api/auth/session - User:', user.email);
+
+    // Explicitly save session to ensure it persists
+    req.session.save((err) => {
+        if (err) {
+            console.error('[AUTH] Failed to save session:', err);
+            return res.status(500).json({ error: 'Failed to save session' });
+        }
+
+        console.log('[DEBUG] POST /api/auth/session - Session saved successfully');
+        console.log('[DEBUG] POST /api/auth/session - firebaseUser set:', !!req.session.firebaseUser);
+
+        res.json({
+            success: true,
+            user: {
+                uid: user.uid,
+                email: user.email,
+                name: user.name,
+            },
+        });
+    });
+});
+
+app.delete('/api/auth/session', (req: Request, res: Response) => {
+    req.session.regenerate(error => {
+        if (error) {
+            console.error('[AUTH] Failed to clear session:', error);
+            return res.status(500).json({ error: 'Failed to clear session' });
+        }
+
+        res.json({
+            success: true,
+        });
+    });
 });
 
 /**
@@ -1182,16 +1420,23 @@ app.get('/api/projects-table', (_req: Request, res: Response) => {
 /**
  * HTMX: Add project and return updated table
  */
-app.post('/api/projects', async (req: Request, res: Response) => {
+app.post('/api/projects', enforceProjectRateLimit, async (req: Request, res: Response) => {
     try {
         const { gitUrl, branch, accessToken } = req.body;
 
+        console.log(`[DEBUG] POST /api/projects - body keys: ${Object.keys(req.body).join(', ')}`);
+        console.log(`[DEBUG] POST /api/projects - gitUrl: ${gitUrl ? `"${gitUrl.substring(0, 50)}..."` : '(missing)'}`);
+        console.log(`[DEBUG] POST /api/projects - branch: ${branch || '(not provided)'}`);
+        console.log(`[DEBUG] POST /api/projects - accessToken: ${accessToken ? '(provided)' : '(not provided)'}`);
+
         if (!gitUrl) {
+            console.log(`[WARN] POST /api/projects - 400: Git URL is required`);
             return res.status(400).send('<p class="error">Git URL is required</p>');
         }
 
         // Validate URL format (must be HTTPS for PAT to work)
         if (accessToken && accessToken.trim() && !gitUrl.startsWith('https://')) {
+            console.log(`[WARN] POST /api/projects - 400: Access token requires HTTPS URL`);
             return res.status(400).send('<p class="error">When using a Personal Access Token, Git URL must use HTTPS format (e.g., https://github.com/user/repo.git)</p>');
         }
 
@@ -1303,70 +1548,6 @@ app.post('/api/chat-message', async (req: Request, res: Response) => {
         res.send(userHTML + modelHTML);
     } catch (error) {
         console.error('[ERROR] Failed to process chat:', error);
-        res.status(500).send(`<p class="error">Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}</p>`);
-    }
-});
-
-/**
- * HTMX: Send ask message and return new message HTML
- */
-app.post('/api/ask-message', async (req: Request, res: Response) => {
-    try {
-        const { message, projectId } = req.body;
-
-        if (!projectId) {
-            return res.status(400).send('<p class="error">Project ID is required</p>');
-        }
-
-        if (!message || typeof message !== 'string') {
-            return res.status(400).send('<p class="error">Message is required</p>');
-        }
-
-        const processedMessage = processUserMessage(message);
-
-        const sessionId = req.session.id;
-        const sessionData = await getChatSession(sessionId, projectId, 'ask');
-
-        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
-        console.log(`[${new Date().toISOString()}] Session: ${sessionId}:${projectId}:ask`);
-        console.log(`[${new Date().toISOString()}] Question:`);
-        console.log(processedMessage);
-        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
-
-        // Send processed message and get response
-        const response = await sendMessageWithRetry(sessionData, processedMessage, projectId, sessionId);
-
-        console.log(`[${new Date().toISOString()}] Response:`);
-        console.log(response);
-        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════\n`);
-
-        // Store in history (using processed message)
-        const timestamp = new Date();
-        const userMessage = { role: 'user' as const, message: processedMessage, timestamp };
-        const modelMessage = { role: 'model' as const, message: response, timestamp };
-
-        sessionData.history.push(userMessage, modelMessage);
-
-        // Write to history file if configured
-        const project = projects.get(projectId);
-        writeHistoryEntry({
-            sessionId,
-            projectId,
-            timestamp,
-            request: processedMessage,
-            response,
-            messageCount: sessionData.history.length,
-            cachedContentName: project?.cachedContent?.name,
-            mode: 'ask',
-        });
-
-        // Return HTML for both messages (showing processed message)
-        const userHTML = generateMessageHTML('user', processedMessage, timestamp, sessionId);
-        const modelHTML = generateMessageHTML('model', response, timestamp, sessionId);
-
-        res.send(userHTML + modelHTML);
-    } catch (error) {
-        console.error('[ERROR] Failed to process ask:', error);
         res.status(500).send(`<p class="error">Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}</p>`);
     }
 });
@@ -1509,7 +1690,7 @@ app.get('/health', (_req: Request, res: Response<HealthResponse>) => {
 /**
  * Get current session information
  */
-app.get('/session', (req: Request, res: Response<SessionInfoResponse | ErrorResponse>) => {
+app.get('/session', requireAuth, (req: Request, res: Response<SessionInfoResponse | ErrorResponse>) => {
     const sessionId = req.session.id;
     const projectId = req.query.projectId as string;
     const mode = (req.query.mode as 'enhance' | 'ask') || 'enhance';
@@ -1535,7 +1716,7 @@ app.get('/session', (req: Request, res: Response<SessionInfoResponse | ErrorResp
 /**
  * Clear the current session
  */
-app.post('/session/clear', (req: Request, res: Response<ClearSessionResponse | ErrorResponse>) => {
+app.post('/session/clear', requireAuth, (req: Request, res: Response<ClearSessionResponse | ErrorResponse>) => {
     const sessionId = req.session.id;
     const projectId = req.query.projectId as string;
     const mode = req.query.mode as string;
@@ -1578,7 +1759,7 @@ app.post('/session/clear', (req: Request, res: Response<ClearSessionResponse | E
 /**
  * Refresh cached content for a specific project
  */
-app.post('/cache/refresh', async (req: Request, res: Response<CacheRefreshResponse | ErrorResponse>) => {
+app.post('/cache/refresh', requireAuth, async (req: Request, res: Response<CacheRefreshResponse | ErrorResponse>) => {
     try {
         const projectId = req.query.projectId as string;
 
@@ -1799,9 +1980,159 @@ app.post('/ask', async (req: Request<{}, ChatResponse | ErrorResponse, ChatReque
 });
 
 /**
+ * Enhance endpoint with path parameter - matches browser URL format
+ */
+app.post('/enhance/:projectId', async (req: Request<{projectId: string}, ChatResponse | ErrorResponse, ChatRequest>, res: Response<ChatResponse | ErrorResponse>) => {
+    try {
+        const { message } = req.body;
+        const projectId = req.params.projectId;
+
+        if (!message || typeof message !== 'string') {
+            return res.status(400).json({
+                error: 'Message is required and must be a string',
+            });
+        }
+
+        const processedMessage = processUserMessage(message);
+
+        const sessionId = req.session.id;
+        const sessionData = await getChatSession(sessionId, projectId, 'enhance');
+
+        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
+        console.log(`[${new Date().toISOString()}] Session: ${sessionId}:${projectId}:enhance`);
+        console.log(`[${new Date().toISOString()}] Input Message:`);
+        console.log(processedMessage);
+        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
+
+        // Send processed message and get response
+        const response = await sendMessageWithRetry(sessionData, processedMessage, projectId, sessionId);
+
+        console.log(`[${new Date().toISOString()}] Response:`);
+        console.log(response);
+        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════\n`);
+
+        // Store in history (using processed message)
+        const timestamp = new Date();
+        sessionData.history.push(
+            {
+                role: 'user',
+                message: processedMessage,
+                timestamp,
+            },
+            {
+                role: 'model',
+                message: response,
+                timestamp,
+            },
+        );
+
+        // Write to history file if configured
+        const project = projects.get(projectId);
+        writeHistoryEntry({
+            sessionId,
+            projectId,
+            timestamp,
+            request: processedMessage,
+            response,
+            messageCount: sessionData.history.length,
+            cachedContentName: project?.cachedContent?.name,
+            mode: 'enhance',
+        });
+
+        res.json({
+            success: true,
+            sessionId,
+            projectId,
+            response,
+        });
+    } catch (error) {
+        console.error('[ERROR] Failed to process enhance:', error);
+        res.status(500).json({
+            error: 'Failed to process message',
+            details: error instanceof Error ? error.message : 'Unknown error',
+        });
+    }
+});
+
+/**
+ * Ask endpoint with path parameter - matches browser URL format
+ */
+app.post('/ask/:projectId', async (req: Request<{projectId: string}, ChatResponse | ErrorResponse, ChatRequest>, res: Response<ChatResponse | ErrorResponse>) => {
+    try {
+        const { message } = req.body;
+        const projectId = req.params.projectId;
+
+        if (!message || typeof message !== 'string') {
+            return res.status(400).json({
+                error: 'Message is required and must be a string',
+            });
+        }
+
+        const processedMessage = processUserMessage(message);
+
+        const sessionId = req.session.id;
+        const sessionData = await getChatSession(sessionId, projectId, 'ask');
+
+        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
+        console.log(`[${new Date().toISOString()}] Session: ${sessionId}:${projectId}:ask`);
+        console.log(`[${new Date().toISOString()}] Input Message:`);
+        console.log(processedMessage);
+        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════`);
+
+        // Send processed message and get response
+        const response = await sendMessageWithRetry(sessionData, processedMessage, projectId, sessionId);
+
+        console.log(`[${new Date().toISOString()}] Response:`);
+        console.log(response);
+        console.log(`[${new Date().toISOString()}] ═══════════════════════════════════════════════════\n`);
+
+        // Store in history (using processed message)
+        const timestamp = new Date();
+        sessionData.history.push(
+            {
+                role: 'user',
+                message: processedMessage,
+                timestamp,
+            },
+            {
+                role: 'model',
+                message: response,
+                timestamp,
+            },
+        );
+
+        // Write to history file if configured
+        const project = projects.get(projectId);
+        writeHistoryEntry({
+            sessionId,
+            projectId,
+            timestamp,
+            request: processedMessage,
+            response,
+            messageCount: sessionData.history.length,
+            cachedContentName: project?.cachedContent?.name,
+            mode: 'ask',
+        });
+
+        res.json({
+            success: true,
+            sessionId,
+            projectId,
+            response,
+        });
+    } catch (error) {
+        console.error('[ERROR] Failed to process ask:', error);
+        res.status(500).json({
+            error: 'Failed to process message',
+            details: error instanceof Error ? error.message : 'Unknown error',
+        });
+    }
+});
+
+/**
  * Get chat history for current session
  */
-app.get('/history', (req: Request, res: Response<HistoryResponse | ErrorResponse>) => {
+app.get('/history', requireAuth, (req: Request, res: Response<HistoryResponse | ErrorResponse>) => {
     const sessionId = req.session.id;
     const projectId = req.query.projectId as string;
     const mode = (req.query.mode as 'enhance' | 'ask') || 'enhance';
@@ -1833,7 +2164,7 @@ app.get('/history', (req: Request, res: Response<HistoryResponse | ErrorResponse
 /**
  * List all configured projects
  */
-app.get('/projects', (_req: Request, res: Response<ProjectsListResponse>) => {
+app.get('/projects', requireAuth, (_req: Request, res: Response<ProjectsListResponse>) => {
     const projectList: ProjectInfo[] = Array.from(projects.values()).map(p => ({
         id: p.id,
         gitUrl: p.gitUrl,
@@ -1850,7 +2181,7 @@ app.get('/projects', (_req: Request, res: Response<ProjectsListResponse>) => {
 /**
  * Add a new project
  */
-app.post('/projects', async (req: Request<{}, AddProjectResponse | ErrorResponse, AddProjectRequest>, res: Response<AddProjectResponse | ErrorResponse>) => {
+app.post('/projects', requireAuth, enforceProjectRateLimit, async (req: Request<{}, AddProjectResponse | ErrorResponse, AddProjectRequest>, res: Response<AddProjectResponse | ErrorResponse>) => {
     try {
         const { gitUrl, branch, accessToken } = req.body;
 
@@ -1902,7 +2233,7 @@ app.post('/projects', async (req: Request<{}, AddProjectResponse | ErrorResponse
 /**
  * Remove a project
  */
-app.delete('/projects/:projectId', async (req: Request, res: Response<RemoveProjectResponse | ErrorResponse>) => {
+app.delete('/projects/:projectId', requireAuth, async (req: Request, res: Response<RemoveProjectResponse | ErrorResponse>) => {
     try {
         const { projectId } = req.params;
 
@@ -1943,7 +2274,7 @@ app.delete('/projects/:projectId', async (req: Request, res: Response<RemoveProj
 /**
  * Shutdown endpoint - gracefully stop the server
  */
-app.post('/shutdown', (_req: Request, res: Response) => {
+app.post('/shutdown', requireAuth, (_req: Request, res: Response) => {
     console.log('[...] Shutdown requested');
 
     res.json({
@@ -2002,6 +2333,8 @@ Projects loaded: ${projects.size}
 
 Endpoints:
   GET    /health                - Health check and server status
+  POST   /api/auth/session      - Sync Firebase ID token into an Express session
+  DELETE /api/auth/session      - Clear the current Express session
   GET    /projects              - List all projects
   POST   /projects              - Add new project
   DELETE /projects/:projectId   - Remove project
@@ -2011,6 +2344,8 @@ Endpoints:
   POST   /session/clear?projectId=ID - Clear current session
   POST   /cache/refresh?projectId=ID - Refresh project context cache
   POST   /shutdown              - Gracefully shutdown the server
+
+Authentication: Firebase ID token via Authorization: Bearer header (or a signed-in browser session)
 
 Session configuration:
   - Max age: ${SESSION_MAX_AGE / (60 * 60 * 1000)} hours

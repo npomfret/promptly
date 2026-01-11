@@ -8,10 +8,19 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css">
+  <script>
+    // Pre-load Firebase config to eliminate async delay
+    (function() {
+      fetch('/config/firebase', { cache: 'no-store' })
+        .then(r => r.json())
+        .then(config => { window.__firebaseConfig__ = config; })
+        .catch(err => console.warn('[AUTH] Failed to pre-load Firebase config:', err));
+    })();
+  </script>
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
 </head>
-<body class="chat-body">
+<body class="chat-body" data-require-auth="true">
   <div class="chat-page">
     <div class="chat-container">
       <section class="chat-shell fade-up" data-animate>
@@ -26,7 +35,15 @@
             <div>
               <p class="eyebrow tight">Ask Mode</p>
               <h2>{{PROJECT_NAME}}</h2>
-              <p class="text-muted"><i data-lucide="git-branch" class="icon"></i> {{PROJECT_BRANCH}}</p>
+              <p class="text-muted">
+                <i data-lucide="git-branch" class="icon"></i> {{PROJECT_BRANCH}}
+                <span style="margin-left: 12px; display: inline-flex; align-items: center; gap: 4px;">
+                  <code id="project-id-display" style="font-size: 0.85em;">{{PROJECT_ID}}</code>
+                  <button onclick="copyProjectId()" class="btn-icon" title="Copy Project ID" style="padding: 0.25rem;">
+                    <i data-lucide="copy" class="icon" style="width: 14px; height: 14px;"></i>
+                  </button>
+                </span>
+              </p>
             </div>
           </div>
           <div class="flex flex-column gap-xs align-end text-right">
@@ -84,7 +101,8 @@
         <div id="tab-conversation" class="tab-content">
           <div class="chat-messages chat-history" id="conversation-messages"
                hx-get="/api/project-history?projectId={{PROJECT_ID}}&mode=ask"
-               hx-trigger="load">
+               hx-trigger="load, promptly-auth"
+               data-auth-retry="auto">
             <p class="text-muted">Loading ask history...</p>
           </div>
         </div>
@@ -99,10 +117,9 @@
           <div class="curl-example">
             <h3><i data-lucide="terminal" class="icon"></i> API Example (curl)</h3>
             <div class="curl-code-container">
-              <pre id="curl-code">curl -X POST "http://localhost:3000/ask?projectId={{PROJECT_ID}}" \
+              <pre id="curl-code">curl -X POST "{{BASE_URL}}/ask/{{PROJECT_ID}}" \
   -H "Content-Type: application/json" \
-  -d '{"message": "How should I implement authentication?"}' \
-  -c cookies.txt -b cookies.txt</pre>
+  -d '{"message": "How should I implement authentication?"}'</pre>
               <button class="btn btn-secondary btn-small copy-btn" onclick="copyCurl(this)">
                 <i data-lucide="copy" class="icon"></i>
                 Copy
@@ -114,6 +131,7 @@
     </div>
   </div>
 
+  <script type="module" src="/js/auth.js"></script>
   <script type="module" src="/js/ui.js"></script>
   <script>
     lucide.createIcons();
@@ -123,6 +141,14 @@
       const messages = document.getElementById('messages');
       if (messages) {
         messages.scrollTop = messages.scrollHeight;
+      }
+    });
+
+    // Handle 401 errors by redirecting to login
+    document.body.addEventListener('htmx:responseError', (event) => {
+      if (event.detail?.xhr?.status === 401) {
+        const next = encodeURIComponent(window.location.href);
+        window.location.href = `/login?next=${next}`;
       }
     });
 
@@ -173,6 +199,23 @@
       }).catch(err => {
         console.error('Failed to copy:', err);
         alert('Failed to copy to clipboard');
+      });
+    }
+
+    function copyProjectId() {
+      const projectId = document.getElementById('project-id-display').textContent;
+      navigator.clipboard.writeText(projectId).then(() => {
+        const btn = event.target.closest('button');
+        const originalHTML = btn.innerHTML;
+        btn.innerHTML = '<i data-lucide="check" class="icon" style="width: 14px; height: 14px;"></i>';
+        lucide.createIcons();
+        setTimeout(() => {
+          btn.innerHTML = originalHTML;
+          lucide.createIcons();
+        }, 2000);
+      }).catch(err => {
+        console.error('Failed to copy project ID:', err);
+        alert('Failed to copy project ID to clipboard');
       });
     }
   </script>

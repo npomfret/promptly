@@ -43,3 +43,6 @@ Thumbs.db
 cookies.txt
 projects.json
 data/
+
+# Backup files
+*.backup

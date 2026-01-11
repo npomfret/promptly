@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In · Promptly</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="auth-page">
+  <main class="page-shell">
+    <section class="glass-panel auth-panel fade-up" data-animate>
+      <div class="section-header">
+        <div>
+          <p class="eyebrow">Promptly</p>
+          <h1>Welcome back</h1>
+        </div>
+      </div>
+
+      <p class="text-muted mb-md">Sign in with your email and password or <a href="/register">create an account</a>.</p>
+
+      <form class="auth-form" data-auth-form data-mode="login">
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" name="email" placeholder="you@example.com" autocomplete="email" required>
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" placeholder="••••••••" autocomplete="current-password" required>
+        </div>
+
+        <p class="auth-error" data-auth-error role="alert"></p>
+
+        <button type="submit" class="btn btn-primary auth-submit">
+          <span data-auth-submit-text>Sign In</span>
+        </button>
+      </form>
+
+      <div class="auth-alt-links">
+        <p>Need an account? <a href="/register">Register</a></p>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="/js/ui.js"></script>
+  <script type="module" src="/js/auth-forms.js"></script>
+  <script>
+    lucide.createIcons();
+  </script>
+</body>
+</html>

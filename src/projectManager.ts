@@ -1,7 +1,7 @@
-import { execSync } from 'child_process';
 import { createHash } from 'crypto';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { GitCommandError, runGitCommand } from './gitRunner.js';
 import { Project, ProjectConfig, ProjectsConfigFile } from './types.js';
 
 const PROJECTS_CONFIG_FILE = 'projects.json';
@@ -85,13 +85,17 @@ function normalizeGitUrl(gitUrl: string): string {
 }
 
 /**
- * Generate a unique project ID from a git URL and branch using SHA-256 hash
+ * Generate a unique project ID from a git URL, branch, and access token using SHA-256 hash
  * Different git URL formats (HTTPS vs SSH) for the same repo will generate the same ID
  * Different branches will generate different IDs
+ * Including access token ensures private repos are kept private (different tokens = different IDs)
+ * while public repos without tokens can be shared (same ID)
  */
-export function generateProjectId(gitUrl: string, branch: string = 'main'): string {
+export function generateProjectId(gitUrl: string, branch: string = 'main', accessToken?: string): string {
     const normalizedUrl = normalizeGitUrl(gitUrl);
-    const composite = `${normalizedUrl}#${branch}`;
+    const composite = accessToken
+        ? `${normalizedUrl}#${branch}#${accessToken}`
+        : `${normalizedUrl}#${branch}`;
     return createHash('sha256').update(composite).digest('hex').substring(0, 12);
 }
 
@@ -150,13 +154,14 @@ export async function cloneRepository(
         // Clone the repository (use authenticated URL)
         console.log(`Cloning ${cleanGitUrl(gitUrl)} to ${targetPath}...`);
         try {
-            execSync(`git clone --branch ${branch} --depth 1 "${authGitUrl}" "${targetPath}"`, {
-                stdio: 'pipe',
-                encoding: 'utf-8',
-            });
+            await runGitCommand(['clone', '--branch', branch, '--depth', '1', authGitUrl, targetPath]);
             console.log(`Successfully cloned ${cleanGitUrl(gitUrl)}`);
-        } catch (cloneError: any) {
-            const errorOutput = cloneError.stderr || cloneError.stdout || cloneError.message;
+        } catch (cloneError: unknown) {
+            const errorOutput = cloneError instanceof GitCommandError
+                ? cloneError.stderr || cloneError.stdout || cloneError.message
+                : cloneError instanceof Error
+                    ? cloneError.message
+                    : 'Unknown error';
             console.error(`[ERROR] Git clone failed: ${errorOutput}`);
             throw new Error(`Failed to clone repository ${cleanGitUrl(gitUrl)}: ${errorOutput}`);
         }
@@ -171,7 +176,7 @@ export async function cloneRepository(
 export async function updateRepository(projectPath: string): Promise<void> {
     try {
         console.log(`Updating repository at ${projectPath}...`);
-        execSync('git pull', {
+        await runGitCommand(['pull'], {
             cwd: projectPath,
             stdio: 'inherit',
         });
@@ -198,7 +203,7 @@ export async function initializeProjects(checkoutDir: string): Promise<Map<strin
         const branch = projectConfig.branch || 'main';
         // Clean the Git URL before generating ID (removes any embedded tokens)
         const cleanUrl = cleanGitUrl(projectConfig.gitUrl);
-        const projectId = generateProjectId(cleanUrl, branch);
+        const projectId = generateProjectId(cleanUrl, branch, projectConfig.accessToken);
         const projectPath = path.join(checkoutDir, projectId);
 
         try {
@@ -256,18 +261,18 @@ export async function addProject(
     // Clean the Git URL (remove any embedded tokens)
     const cleanUrl = cleanGitUrl(gitUrl);
 
-    // Generate project ID (includes branch)
-    const projectId = generateProjectId(cleanUrl, branch);
+    // Generate project ID (includes branch and access token)
+    const projectId = generateProjectId(cleanUrl, branch, accessToken);
     const projectPath = path.join(checkoutDir, projectId);
 
     // Load existing configuration
     const config = await loadProjectsConfig();
 
-    // Check if project already exists (same URL and branch combination)
+    // Check if project already exists (same URL, branch, and access token combination)
     const exists = config.projects.some(p => {
         const existingBranch = p.branch || 'main';
         const existingCleanUrl = cleanGitUrl(p.gitUrl);
-        return generateProjectId(existingCleanUrl, existingBranch) === projectId;
+        return generateProjectId(existingCleanUrl, existingBranch, p.accessToken) === projectId;
     });
     if (exists) {
         throw new Error(`Project with git URL ${cleanUrl} and branch ${branch} already exists`);
@@ -319,7 +324,7 @@ export async function removeProject(projectId: string, project: Project): Promis
     config.projects = config.projects.filter(p => {
         const branch = p.branch || 'main';
         const cleanUrl = cleanGitUrl(p.gitUrl);
-        return generateProjectId(cleanUrl, branch) !== projectId;
+        return generateProjectId(cleanUrl, branch, p.accessToken) !== projectId;
     });
     await saveProjectsConfig(config);
 

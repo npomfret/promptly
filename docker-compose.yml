@@ -1,5 +1,8 @@
 services:
   promptly:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: promptly:latest
     container_name: promptly
     restart: unless-stopped
@@ -11,6 +14,7 @@ services:
       - HISTORY_DIR=/app/data/history
       - PORT=3000
       - SESSION_SECRET=${SESSION_SECRET:-}
+      - NODE_ENV=production
     volumes:
       # Persist cloned repositories
       - ./data/checkouts:/app/data/checkouts
@@ -20,8 +24,11 @@ services:
       - ./data/projects.json:/app/projects.json
       # Optional: Mount custom prompts
       - ./prompts:/app/prompts:ro
+      # Mount Firebase config files from persistent server location
+      - /opt/promptly-data/config:/app/config/private:ro
     networks:
       - promptly-network
+      - snowmonkey-proxy-network
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
       interval: 30s
@@ -32,3 +39,5 @@ services:
 networks:
   promptly-network:
     driver: bridge
+  snowmonkey-proxy-network:
+    external: true
