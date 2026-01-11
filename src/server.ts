@@ -251,6 +251,10 @@ if (HISTORY_DIR) {
 // Initialize Express app
 const app = express();
 
+// Trust proxy to get real client IP from X-Forwarded-For header
+// This is safe because we're behind nginx in the same Docker network
+app.set('trust proxy', true);
+
 // Initialize Gemini AI
 const genAI = new GoogleGenerativeAI(API_KEY);
 const cacheManager = new GoogleAICacheManager(API_KEY);
