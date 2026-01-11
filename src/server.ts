@@ -23,7 +23,7 @@ import {
 import type { AuthedRequest } from './auth.js';
 import { getFirebaseClientConfig, requireAuth } from './auth.js';
 import { startWatching } from './repoWatcher.js';
-import { runGitCommand } from './gitRunner.js';
+import { getActiveGitProcessCount, runGitCommand } from './gitRunner.js';
 import type {
     AddProjectRequest,
     AddProjectResponse,
@@ -257,6 +257,7 @@ const cacheManager = new GoogleAICacheManager(API_KEY);
 
 // Store for projects
 const projects = new Map<string, Project>();
+const serverStartTime = Date.now();
 
 // Store for long-lived chat sessions (key: sessionId:projectId)
 const chatSessions = new Map<string, SessionData>();
@@ -1680,11 +1681,44 @@ app.post('/api/session/clear', (req: Request, res: Response) => {
  * Health check endpoint
  */
 app.get('/health', (_req: Request, res: Response<HealthResponse>) => {
+    const activeGitProcesses = getActiveGitProcessCount();
     res.json({
         status: 'ok',
         sessions: chatSessions.size,
         systemPrompt: 'Multi-project server',
+        activeGitProcesses,
     });
+});
+
+/**
+ * Prometheus metrics endpoint
+ */
+app.get('/metrics', (_req: Request, res: Response) => {
+    const activeGitProcesses = getActiveGitProcessCount();
+    const uptimeSeconds = Math.floor((Date.now() - serverStartTime) / 1000);
+
+    // Generate Prometheus-compatible metrics
+    const metrics = [
+        '# HELP promptly_active_git_processes Number of currently active git processes',
+        '# TYPE promptly_active_git_processes gauge',
+        `promptly_active_git_processes ${activeGitProcesses}`,
+        '',
+        '# HELP promptly_projects_total Total number of configured projects',
+        '# TYPE promptly_projects_total gauge',
+        `promptly_projects_total ${projects.size}`,
+        '',
+        '# HELP promptly_chat_sessions_active Number of active chat sessions',
+        '# TYPE promptly_chat_sessions_active gauge',
+        `promptly_chat_sessions_active ${chatSessions.size}`,
+        '',
+        '# HELP promptly_uptime_seconds Server uptime in seconds',
+        '# TYPE promptly_uptime_seconds counter',
+        `promptly_uptime_seconds ${uptimeSeconds}`,
+        '',
+    ].join('\n');
+
+    res.set('Content-Type', 'text/plain; version=0.0.4');
+    res.send(metrics);
 });
 
 /**

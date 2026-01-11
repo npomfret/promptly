@@ -1,4 +1,38 @@
-import { spawn } from 'child_process';
+import { spawn, ChildProcess } from 'child_process';
+
+// Global tracking of active git processes for cleanup
+const activeGitProcesses = new Set<ChildProcess>();
+let shutdownHandlersRegistered = false;
+
+/**
+ * Register cleanup handlers to kill all git processes on shutdown
+ */
+function registerShutdownHandlers(): void {
+    if (shutdownHandlersRegistered) return;
+    shutdownHandlersRegistered = true;
+
+    const cleanup = () => {
+        console.log(`[CLEANUP] Killing ${activeGitProcesses.size} active git processes...`);
+        for (const child of activeGitProcesses) {
+            try {
+                child.kill('SIGTERM');
+                // Force kill after 2 seconds if still alive
+                setTimeout(() => {
+                    if (!child.killed) {
+                        child.kill('SIGKILL');
+                    }
+                }, 2000);
+            } catch (error) {
+                // Process might already be dead
+            }
+        }
+        activeGitProcesses.clear();
+    };
+
+    process.on('SIGTERM', cleanup);
+    process.on('SIGINT', cleanup);
+    process.on('exit', cleanup);
+}
 
 export interface GitCommandOptions {
     cwd?: string;
@@ -40,10 +74,21 @@ export class GitCommandError extends Error {
 }
 
 /**
+ * Get the number of currently active git processes
+ * Useful for debugging and monitoring
+ */
+export function getActiveGitProcessCount(): number {
+    return activeGitProcesses.size;
+}
+
+/**
  * Spawn a git process and resolve when it exits.
  * Ensures we always wait for exit/close, preventing zombie processes.
  */
 export async function runGitCommand(args: string[], options: GitCommandOptions = {}): Promise<GitCommandResult> {
+    // Register shutdown handlers on first use
+    registerShutdownHandlers();
+
     const stdio = options.stdio ?? 'pipe';
     const shouldCapture = stdio === 'pipe';
     const maxBuffer = options.maxBufferBytes ?? 10 * 1024 * 1024; // 10MB default
@@ -55,6 +100,12 @@ export async function runGitCommand(args: string[], options: GitCommandOptions =
             stdio: shouldCapture ? ['ignore', 'pipe', 'pipe'] : ['ignore', 'inherit', 'inherit'],
         });
 
+        // Track this process globally for cleanup on shutdown
+        activeGitProcesses.add(child);
+
+        // Allow the child process to run independently without blocking the event loop
+        child.unref();
+
         let stdout = '';
         let stderr = '';
         let stdoutBytes = 0;
@@ -64,17 +115,35 @@ export async function runGitCommand(args: string[], options: GitCommandOptions =
 
         const cleanup = (): void => {
             resolved = true;
+
+            // Remove from active processes
+            activeGitProcesses.delete(child);
+
+            // Destroy streams to ensure 'close' event fires
             if (child.stdout) {
                 child.stdout.removeAllListeners();
+                child.stdout.destroy();
             }
             if (child.stderr) {
                 child.stderr.removeAllListeners();
+                child.stderr.destroy();
+            }
+            if (child.stdin) {
+                child.stdin.destroy();
             }
         };
 
         const abortWithError = (error: Error): void => {
             if (resolved) return;
             cleanup();
+            // Ensure the process is killed
+            try {
+                if (!child.killed) {
+                    child.kill('SIGTERM');
+                }
+            } catch {
+                // Process might already be dead
+            }
             reject(error);
         };
 
@@ -106,22 +175,51 @@ export async function runGitCommand(args: string[], options: GitCommandOptions =
 
         const timeoutMs = options.timeoutMs;
         let timeoutHandle: NodeJS.Timeout | undefined;
+        let killTimeoutHandle: NodeJS.Timeout | undefined;
+
         if (timeoutMs && timeoutMs > 0) {
             timeoutHandle = setTimeout(() => {
+                if (resolved) return; // Already done, no need to timeout
                 timedOut = true;
-                child.kill('SIGTERM');
-                // Force kill if it refuses to exit
-                setTimeout(() => child.kill('SIGKILL'), 5000).unref();
+
+                try {
+                    child.kill('SIGTERM');
+                } catch {
+                    // Process might already be dead
+                }
+
+                // Force kill if it refuses to exit after 5 seconds
+                // Only if the process hasn't been cleaned up yet
+                killTimeoutHandle = setTimeout(() => {
+                    if (!resolved && !child.killed) {
+                        try {
+                            child.kill('SIGKILL');
+                        } catch {
+                            // Process might already be dead
+                        }
+                    }
+                }, 5000);
             }, timeoutMs);
         }
 
+        const clearTimeouts = () => {
+            if (timeoutHandle) {
+                clearTimeout(timeoutHandle);
+                timeoutHandle = undefined;
+            }
+            if (killTimeoutHandle) {
+                clearTimeout(killTimeoutHandle);
+                killTimeoutHandle = undefined;
+            }
+        };
+
         child.once('error', (error: Error) => {
-            if (timeoutHandle) clearTimeout(timeoutHandle);
+            clearTimeouts();
             abortWithError(error);
         });
 
         child.once('close', (code: number | null, signal: NodeJS.Signals | null) => {
-            if (timeoutHandle) clearTimeout(timeoutHandle);
+            clearTimeouts();
             if (resolved) return;
             cleanup();
 

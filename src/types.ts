@@ -58,6 +58,7 @@ export interface HealthResponse {
     status: 'ok';
     sessions: number;
     systemPrompt: string;
+    activeGitProcesses: number;
 }
 
 export interface SessionInfoResponse {

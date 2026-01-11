@@ -1,4 +1,4 @@
-import { runGitCommand } from './gitRunner.js';
+import { getActiveGitProcessCount, runGitCommand } from './gitRunner.js';
 import { buildAuthenticatedGitUrl } from './projectManager.js';
 import type { Project } from './types.js';
 
@@ -99,6 +99,8 @@ export function startWatching(
             return;
         }
         isRunning = true;
+        const startProcessCount = getActiveGitProcessCount();
+        console.log(`[DEBUG] Repo watcher starting (${startProcessCount} active git processes)`);
         try {
             for (const [projectId, project] of projects.entries()) {
                 try {
@@ -121,6 +123,8 @@ export function startWatching(
             }
         } finally {
             isRunning = false;
+            const endProcessCount = getActiveGitProcessCount();
+            console.log(`[DEBUG] Repo watcher finished (${endProcessCount} active git processes)`);
         }
     }, intervalMs);
 
