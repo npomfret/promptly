@@ -1701,6 +1701,8 @@ app.get('/health', (_req: Request, res: Response<HealthResponse>) => {
 app.get('/metrics', (req: Request, res: Response) => {
     const clientIp = req.ip || req.socket.remoteAddress || '';
 
+    console.log(`[DEBUG] /metrics request from IP: ${clientIp}`);
+
     // Allow localhost and Docker internal networks
     const isInternal =
         clientIp === '::1' ||
@@ -1711,6 +1713,7 @@ app.get('/metrics', (req: Request, res: Response) => {
         clientIp.startsWith('::ffff:10.');
 
     if (!isInternal) {
+        console.log(`[WARN] Blocked /metrics access from external IP: ${clientIp}`);
         return res.status(403).send('Forbidden: Metrics endpoint is internal only');
     }
 
