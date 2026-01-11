@@ -1691,9 +1691,25 @@ app.get('/health', (_req: Request, res: Response<HealthResponse>) => {
 });
 
 /**
- * Prometheus metrics endpoint
+ * Prometheus metrics endpoint (internal only)
+ * Only accessible from Docker internal networks (172.x.x.x, 10.x.x.x) or localhost
  */
-app.get('/metrics', (_req: Request, res: Response) => {
+app.get('/metrics', (req: Request, res: Response) => {
+    const clientIp = req.ip || req.socket.remoteAddress || '';
+
+    // Allow localhost and Docker internal networks
+    const isInternal =
+        clientIp === '::1' ||
+        clientIp === '127.0.0.1' ||
+        clientIp.startsWith('172.') ||
+        clientIp.startsWith('10.') ||
+        clientIp.startsWith('::ffff:172.') ||
+        clientIp.startsWith('::ffff:10.');
+
+    if (!isInternal) {
+        return res.status(403).send('Forbidden: Metrics endpoint is internal only');
+    }
+
     const activeGitProcesses = getActiveGitProcessCount();
     const uptimeSeconds = Math.floor((Date.now() - serverStartTime) / 1000);
 
