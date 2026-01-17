@@ -103,9 +103,6 @@ export async function runGitCommand(args: string[], options: GitCommandOptions =
         // Track this process globally for cleanup on shutdown
         activeGitProcesses.add(child);
 
-        // Allow the child process to run independently without blocking the event loop
-        child.unref();
-
         let stdout = '';
         let stderr = '';
         let stdoutBytes = 0;
